@@ -1,18 +1,21 @@
+// An HTTP-over-vsock service which initialises a single node Kubernetes cluster
+// returning the keys to the client and optionally exposing the main API port.
 package main
 
 import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
+	"strings"
 
 	"github.com/linuxkit/virtsock/pkg/vsock"
 )
-
-// Expose a service to run `kubeadm` in a single node (desktop) environment
 
 // Init is the /path for the `kubeadm init` RPC
 const Init = "/init"
@@ -20,6 +23,7 @@ const Init = "/init"
 // InitRequest is the arguments for `kubeadm init`
 type InitRequest struct {
 	NodeName string `json:"node_name"` // used in the certificate. Must resolve on the host to a local interface
+	Version  string `json:"version"`   // requested Kubernetes version
 }
 
 // InitResponse returns the response from `kubeadm init`
@@ -27,10 +31,27 @@ type InitResponse struct {
 	AdminConf string `json:"admin_conf"` // the admin.conf containing the private keys
 }
 
-func doInit(req InitRequest) (InitResponse, error) {
+func doInit(req InitRequest) (*InitResponse, error) {
 	log.Printf("Received init request %v", req)
-	AdminConf := "this should go in the .kube/config file"
-	res := InitResponse{AdminConf}
+	var res *InitResponse
+
+	args := []string{"init", "--skip-preflight-checks", "--node-name", req.NodeName, "--kubernetes-version", req.Version}
+	if err := exec.Command("/usr/bin/kubeadm", args...).Run(); err != nil {
+		log.Printf("Failed to run kubeadm %s: %s", strings.Join(args, " "), err)
+		return res, err
+	}
+	args = []string{"create", "-n", "kube-system", "-f", "/etc/weave.yml"}
+	if err := exec.Command("/usr/bin/kubectl", args...).Run(); err != nil {
+		log.Printf("Failed to run kubectl %s: %s", strings.Join(args, " "), err)
+		return res, err
+	}
+	// read /etc/kubernetes/admin.conf
+	b, err := ioutil.ReadFile("/etc/kubernetes/admin.conf")
+	if err != nil {
+		log.Printf("Failed to read /etc/kubernetes/admin.conf: %s", err)
+		return res, err
+	}
+	res = &InitResponse{AdminConf: string(b)}
 	return res, nil
 }
 
@@ -46,6 +67,8 @@ func doExpose(req ExposeRequest) error {
 	log.Printf("Received expose request %v", req)
 	return nil
 }
+
+// HTTP server follows:
 
 // HTTPListener responds to HTTP on the AF_VSOCK listening socket
 type HTTPListener struct {

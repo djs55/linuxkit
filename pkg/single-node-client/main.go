@@ -24,6 +24,7 @@ const Init = "/init"
 // InitRequest is the arguments for `kubeadm init`
 type InitRequest struct {
 	NodeName string `json:"node_name"` // used in the certificate. Must resolve on the host to a local interface
+	Version  string `json:"version"`   // requested Kubernetes version
 }
 
 // InitResponse returns the response from `kubeadm init`
@@ -49,6 +50,7 @@ func main() {
 	expose := flag.Int("expose", 0, "TCP port to expose")
 	port := flag.Int("port", 0xf3a3, "AF_VSOCK port to connect on")
 	init := flag.Bool("init", false, "initialise the cluster")
+	version := flag.String("version", "v1.7.2", "requested Kubernetes version")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "%s: automate the setup of a single node kubernetes cluster.\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Example usage:\n")
@@ -86,7 +88,8 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to determine the local hostname: %s", err)
 		}
-		req := InitRequest{NodeName}
+		Version := *version
+		req := InitRequest{NodeName, Version}
 		reqBody := new(bytes.Buffer)
 		json.NewEncoder(reqBody).Encode(req)
 		response, err := httpc.Post("http://unix"+Init, "application/json", reqBody)
