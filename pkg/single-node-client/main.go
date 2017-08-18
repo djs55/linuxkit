@@ -29,7 +29,8 @@ type InitRequest struct {
 
 // InitResponse returns the response from `kubeadm init`
 type InitResponse struct {
-	AdminConf string `json:"admin_conf"` // the admin.conf containing the private keys
+	AdminConf  string `json:"admin_conf"`  // the admin.conf containing the private keys
+	InternalIP string `json:"internal_ip"` // IP of the master
 }
 
 // Expose is the /path for the request to expose the HTTPS port on the host

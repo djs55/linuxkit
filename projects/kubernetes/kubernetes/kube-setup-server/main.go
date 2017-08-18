@@ -30,7 +30,8 @@ type InitRequest struct {
 
 // InitResponse returns the response from `kubeadm init`
 type InitResponse struct {
-	AdminConf string `json:"admin_conf"` // the admin.conf containing the private keys
+	AdminConf  string `json:"admin_conf"`  // the admin.conf containing the private keys
+	InternalIP string `json:"internal_ip"` // IP of the master
 }
 
 func doInit(req InitRequest) (*InitResponse, error) {
@@ -52,7 +53,21 @@ func doInit(req InitRequest) (*InitResponse, error) {
 		log.Printf("Failed to read /etc/kubernetes/admin.conf: %s", err)
 		return nil, err
 	}
-	return &InitResponse{AdminConf: string(b)}, nil
+	AdminConf := string(b)
+	// Discover the IP on the same subnet as the vpnkit gateway, so we tell vpnkit
+	// the correct IP to use to call us back on.
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		log.Printf("Failed to discover an external IP address: is there a default route? %s", err)
+		return nil, err
+	}
+	defer conn.Close()
+	localAddr := conn.LocalAddr().String()
+	idx := strings.LastIndex(localAddr, ":")
+	InternalIP := localAddr[0:idx]
+	log.Printf("Discovered local external IP address is: %s", InternalIP)
+
+	return &InitResponse{AdminConf, InternalIP}, nil
 }
 
 // Expose is the /path for the request to expose the HTTPS port on the host
