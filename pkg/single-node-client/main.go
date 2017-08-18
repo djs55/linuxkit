@@ -7,10 +7,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -97,6 +99,14 @@ func main() {
 			log.Fatalf("Failed to parse result of init: %s", err)
 		}
 		log.Printf("Init returned %v\n", res)
+		kubeDir := filepath.Join(os.Getenv("HOME"), ".kube")
+		if err = os.MkdirAll(kubeDir, os.ModePerm); err != nil {
+			log.Fatalf("Failed to create %s: %s", kubeDir, err)
+		}
+		configPath := filepath.Join(kubeDir, "config")
+		if err = ioutil.WriteFile(configPath, []byte(res.AdminConf), 0644); err != nil {
+			log.Fatalf("Failed to write %s: %s", configPath, err)
+		}
 		response.Body.Close()
 	}
 

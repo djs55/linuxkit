@@ -29,7 +29,7 @@ type InitResponse struct {
 
 func doInit(req InitRequest) (InitResponse, error) {
 	log.Printf("Received init request %v", req)
-	AdminConf := ""
+	AdminConf := "this should go in the .kube/config file"
 	res := InitResponse{AdminConf}
 	return res, nil
 }
@@ -117,7 +117,7 @@ func (h HTTPListener) exposeHandler() func(http.ResponseWriter, *http.Request) {
 }
 
 func main() {
-	// single-node-setup -vsock <port>
+	// single-node-setup -cid <cid> -vsock <port>
 	cid := flag.Int("cid", 0, "AF_VSOCK CID to listen on")
 	port := flag.Int("port", 0xf3a3, "AF_VSOCK port to listen on")
 	flag.Usage = func() {
