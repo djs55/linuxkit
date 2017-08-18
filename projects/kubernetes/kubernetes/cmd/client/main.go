@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/linuxkit/linuxkit/projects/kubernetes/kubernetes/pkg/common"
+	vpnkit "github.com/moby/vpnkit/go/pkg/vpnkit"
 )
 
 // Invoke the `kubeadm init` service
@@ -23,6 +24,7 @@ import (
 func main() {
 	// single-node-client -path <path to connect socket> [-init] [-expose]
 	path := flag.String("path", os.Getenv("HOME")+"/Library/Containers/com.docker.docker/Data/connect", "path to connect socket")
+	vpnkitPath := flag.String("vpnkit-control-path", os.Getenv("HOME")+"/Library/Containers/com.docker.docker/Data/s51", "path to vpnkit's control socket")
 	expose := flag.Int("expose", 0, "TCP port to expose")
 	port := flag.Int("port", 0xf3a3, "AF_VSOCK port to connect on")
 	init := flag.Bool("init", false, "initialise the cluster")
@@ -65,7 +67,7 @@ func main() {
 			log.Fatalf("Failed to determine the local hostname: %s", err)
 		}
 		Version := *version
-		req := common.InitRequest{NodeName, Version}
+		req := common.InitRequest{NodeName: NodeName, Version: Version}
 		reqBody := new(bytes.Buffer)
 		json.NewEncoder(reqBody).Encode(req)
 		response, err := httpc.Post("http://unix"+common.Init, "application/json", reqBody)
@@ -98,26 +100,18 @@ func main() {
 
 	if *expose != 0 {
 		// expose the port
-		req := common.ExposeRequest{ExternalPort: *expose}
-		reqBody := new(bytes.Buffer)
-		json.NewEncoder(reqBody).Encode(req)
-		response, err := httpc.Post("http://unix"+common.Expose, "application/json", reqBody)
+		c, err := vpnkit.NewConnection(context.Background(), *vpnkitPath)
 		if err != nil {
-			log.Fatalf("Failed to invoke expose: %s", err)
+			log.Fatal(err)
 		}
-		defer response.Body.Close()
-		if response.StatusCode != 200 {
-			msg, err := ioutil.ReadAll(response.Body)
-			if err != nil {
-				log.Fatalf("Failed to read error message from expose: %s", err)
-			}
-			log.Fatalf("Expose failed with: %s", msg)
+		proto := "tcp"
+		outIP := net.ParseIP("0.0.0.0")
+		outPort := int16(*expose)
+		inIP := net.ParseIP("127.0.0.1")
+		inPort := int16(*expose)
+		p := vpnkit.NewPort(c, proto, outIP, outPort, inIP, inPort)
+		if err = p.Expose(context.Background()); err != nil {
+			log.Fatal(err)
 		}
-		var res common.ExposeResponse
-		err = json.NewDecoder(response.Body).Decode(&res)
-		if err != nil {
-			log.Fatalf("Failed to parse result of expose: %s", err)
-		}
-		log.Printf("Expose returned %v\n", res)
 	}
 }
