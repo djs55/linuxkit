@@ -1,4 +1,6 @@
 #!/bin/sh
+/usr/bin/kube-setup-server&
+
 mount --bind /opt/cni /rootfs/opt/cni
 mount --bind /etc/cni /rootfs/etc/cni
 until kubelet --kubeconfig=/var/lib/kubeadm/kubelet.conf \
