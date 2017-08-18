@@ -3,7 +3,9 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -65,6 +67,50 @@ type ExposeRequest struct {
 
 func doExpose(req ExposeRequest) error {
 	log.Printf("Received expose request %v", req)
+	// Discover the IP on the same subnet as the vpnkit gateway, so we tell vpnkit
+	// the correct IP to use to call us back on.
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		log.Printf("Failed to discover an external IP address: is there a default route? %s", err)
+		return err
+	}
+	defer conn.Close()
+	localAddr := conn.LocalAddr().String()
+	idx := strings.LastIndex(localAddr, ":")
+	containerIP := localAddr[0:idx]
+	log.Printf("Discovered local external IP address is: %s", containerIP)
+
+	args := []string{"-container-ip", containerIP, "-container-port", "6443", "-host-ip", "0.0.0.0", "-host-port", fmt.Sprintf("%d", req.ExternalPort), "-no-local-ip"}
+	cmd := exec.Command("/usr/bin/vpnkit-expose-port", args...)
+
+	// We need a pipe to receive success / failure
+	r, w, err := os.Pipe()
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	cmd.ExtraFiles = []*os.File{w}
+	log.Printf("Starting %s", strings.Join(cmd.Args, " "))
+	if err = cmd.Start(); err != nil {
+		w.Close()
+		log.Printf("Failed to start vpnkit-expose-port: %s", err)
+		return err
+	}
+	w.Close()
+	b := bufio.NewReader(r)
+	line, err := b.ReadString('\n')
+	if err != nil {
+		log.Printf("Failed to read response code from vpnkit-expose-port: %s", err)
+		return err
+	}
+	if line == "1" {
+		msg, err := ioutil.ReadAll(b)
+		if err != nil {
+			log.Printf("Failed to read the error message from vpnkit-expose-port: %s", err)
+		}
+		return errors.New(string(msg))
+	}
+	// Leave the process running
 	return nil
 }
 
