@@ -8,6 +8,7 @@ until kubelet --kubeconfig=/var/lib/kubeadm/kubelet.conf \
 	      --pod-manifest-path=/var/lib/kubeadm/manifests \
 	      --allow-privileged=true \
 	      --cluster-dns=10.96.0.10 \
+		  --hostname-override=davids-mbp-2.cam.docker.com \
 	      --cluster-domain=cluster.local \
 	      --cgroups-per-qos=false \
 	      --enforce-node-allocatable= \
