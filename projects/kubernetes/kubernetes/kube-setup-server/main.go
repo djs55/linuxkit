@@ -41,7 +41,7 @@ func doInit(req InitRequest) (*InitResponse, error) {
 		log.Printf("Failed to run kubeadm %s: %s", strings.Join(args, " "), err)
 		return nil, err
 	}
-	args = []string{"create", "-n", "kube-system", "-f", "/etc/weave.yml"}
+	args = []string{"create", "-n", "kube-system", "-f", "/etc/weave.yaml"}
 	if err := exec.Command("/usr/bin/kubectl", args...).Run(); err != nil {
 		log.Printf("Failed to run kubectl %s: %s", strings.Join(args, " "), err)
 		return nil, err
