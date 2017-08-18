@@ -35,26 +35,24 @@ type InitResponse struct {
 
 func doInit(req InitRequest) (*InitResponse, error) {
 	log.Printf("Received init request %v", req)
-	var res *InitResponse
 
 	args := []string{"init", "--skip-preflight-checks", "--node-name", req.NodeName, "--kubernetes-version", req.Version}
 	if err := exec.Command("/usr/bin/kubeadm", args...).Run(); err != nil {
 		log.Printf("Failed to run kubeadm %s: %s", strings.Join(args, " "), err)
-		return res, err
+		return nil, err
 	}
 	args = []string{"create", "-n", "kube-system", "-f", "/etc/weave.yml"}
 	if err := exec.Command("/usr/bin/kubectl", args...).Run(); err != nil {
 		log.Printf("Failed to run kubectl %s: %s", strings.Join(args, " "), err)
-		return res, err
+		return nil, err
 	}
 	// read /etc/kubernetes/admin.conf
 	b, err := ioutil.ReadFile("/etc/kubernetes/admin.conf")
 	if err != nil {
 		log.Printf("Failed to read /etc/kubernetes/admin.conf: %s", err)
-		return res, err
+		return nil, err
 	}
-	res = &InitResponse{AdminConf: string(b)}
-	return res, nil
+	return &InitResponse{AdminConf: string(b)}, nil
 }
 
 // Expose is the /path for the request to expose the HTTPS port on the host
@@ -65,14 +63,19 @@ type ExposeRequest struct {
 	ExternalPort int `json:"external_port"` // the port on the host
 }
 
-func doExpose(req ExposeRequest) error {
+// ExposeResponse returns the response from exposing the port
+type ExposeResponse struct {
+}
+
+func doExpose(req ExposeRequest) (*ExposeResponse, error) {
 	log.Printf("Received expose request %v", req)
+
 	// Discover the IP on the same subnet as the vpnkit gateway, so we tell vpnkit
 	// the correct IP to use to call us back on.
 	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err != nil {
 		log.Printf("Failed to discover an external IP address: is there a default route? %s", err)
-		return err
+		return nil, err
 	}
 	defer conn.Close()
 	localAddr := conn.LocalAddr().String()
@@ -86,7 +89,7 @@ func doExpose(req ExposeRequest) error {
 	// We need a pipe to receive success / failure
 	r, w, err := os.Pipe()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer r.Close()
 	cmd.ExtraFiles = []*os.File{w}
@@ -94,24 +97,24 @@ func doExpose(req ExposeRequest) error {
 	if err = cmd.Start(); err != nil {
 		w.Close()
 		log.Printf("Failed to start vpnkit-expose-port: %s", err)
-		return err
+		return nil, err
 	}
 	w.Close()
 	b := bufio.NewReader(r)
 	line, err := b.ReadString('\n')
 	if err != nil {
 		log.Printf("Failed to read response code from vpnkit-expose-port: %s", err)
-		return err
+		return nil, err
 	}
-	if line == "1" {
+	if line == "1\n" {
 		msg, err := ioutil.ReadAll(b)
 		if err != nil {
 			log.Printf("Failed to read the error message from vpnkit-expose-port: %s", err)
 		}
-		return errors.New(string(msg))
+		return nil, errors.New(string(msg))
 	}
 	// Leave the process running
-	return nil
+	return &ExposeResponse{}, nil
 }
 
 // HTTP server follows:
@@ -157,6 +160,7 @@ func (h HTTPListener) initHandler() func(http.ResponseWriter, *http.Request) {
 		}
 		res, err := doInit(req)
 		if err != nil {
+			log.Printf("Returning error %s", err)
 			http.Error(w, err.Error(), 400)
 			return
 		}
@@ -177,11 +181,12 @@ func (h HTTPListener) exposeHandler() func(http.ResponseWriter, *http.Request) {
 			http.Error(w, err.Error(), 400)
 			return
 		}
-		err = doExpose(req)
+		res, err := doExpose(req)
 		if err != nil {
 			http.Error(w, err.Error(), 400)
 			return
 		}
+		json.NewEncoder(w).Encode(res)
 	}
 }
 

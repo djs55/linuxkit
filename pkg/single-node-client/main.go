@@ -96,6 +96,14 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to invoke init: %s", err)
 		}
+		defer response.Body.Close()
+		if response.StatusCode != 200 {
+			msg, err := ioutil.ReadAll(response.Body)
+			if err != nil {
+				log.Fatalf("Failed to read error message from init: %s", err)
+			}
+			log.Fatalf("Init failed with: %s", msg)
+		}
 		var res InitResponse
 		err = json.NewDecoder(response.Body).Decode(&res)
 		if err != nil {
@@ -110,7 +118,6 @@ func main() {
 		if err = ioutil.WriteFile(configPath, []byte(res.AdminConf), 0644); err != nil {
 			log.Fatalf("Failed to write %s: %s", configPath, err)
 		}
-		response.Body.Close()
 	}
 
 	if *expose != 0 {
@@ -122,12 +129,19 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to invoke expose: %s", err)
 		}
+		defer response.Body.Close()
+		if response.StatusCode != 200 {
+			msg, err := ioutil.ReadAll(response.Body)
+			if err != nil {
+				log.Fatalf("Failed to read error message from expose: %s", err)
+			}
+			log.Fatalf("Expose failed with: %s", msg)
+		}
 		var res ExposeResponse
 		err = json.NewDecoder(response.Body).Decode(&res)
 		if err != nil {
 			log.Fatalf("Failed to parse result of expose: %s", err)
 		}
 		log.Printf("Expose returned %v\n", res)
-		response.Body.Close()
 	}
 }
