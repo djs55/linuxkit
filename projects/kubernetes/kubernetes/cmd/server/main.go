@@ -3,9 +3,7 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -41,25 +39,11 @@ func doInit(req common.InitRequest) (*common.InitResponse, error) {
 		return nil, err
 	}
 	AdminConf := string(b)
-	// Discover the IP on the same subnet as the vpnkit gateway, so we tell vpnkit
-	// the correct IP to use to call us back on.
-	conn, err := net.Dial("udp", "8.8.8.8:80")
-	if err != nil {
-		log.Printf("Failed to discover an external IP address: is there a default route? %s", err)
-		return nil, err
-	}
-	defer conn.Close()
-	localAddr := conn.LocalAddr().String()
-	idx := strings.LastIndex(localAddr, ":")
-	InternalIP := localAddr[0:idx]
-	log.Printf("Discovered local external IP address is: %s", InternalIP)
 
-	return &common.InitResponse{AdminConf, InternalIP}, nil
+	return &common.InitResponse{AdminConf}, nil
 }
 
-func doExpose(req common.ExposeRequest) (*common.ExposeResponse, error) {
-	log.Printf("Received expose request %v", req)
-
+func doGetIP() (*common.GetIPResponse, error) {
 	// Discover the IP on the same subnet as the vpnkit gateway, so we tell vpnkit
 	// the correct IP to use to call us back on.
 	conn, err := net.Dial("udp", "8.8.8.8:80")
@@ -70,41 +54,9 @@ func doExpose(req common.ExposeRequest) (*common.ExposeResponse, error) {
 	defer conn.Close()
 	localAddr := conn.LocalAddr().String()
 	idx := strings.LastIndex(localAddr, ":")
-	containerIP := localAddr[0:idx]
-	log.Printf("Discovered local external IP address is: %s", containerIP)
-
-	args := []string{"-container-ip", containerIP, "-container-port", "6443", "-host-ip", "0.0.0.0", "-host-port", fmt.Sprintf("%d", req.ExternalPort), "-no-local-ip"}
-	cmd := exec.Command("/usr/bin/vpnkit-expose-port", args...)
-
-	// We need a pipe to receive success / failure
-	r, w, err := os.Pipe()
-	if err != nil {
-		return nil, err
-	}
-	defer r.Close()
-	cmd.ExtraFiles = []*os.File{w}
-	log.Printf("Starting %s", strings.Join(cmd.Args, " "))
-	if err = cmd.Start(); err != nil {
-		w.Close()
-		log.Printf("Failed to start vpnkit-expose-port: %s", err)
-		return nil, err
-	}
-	w.Close()
-	b := bufio.NewReader(r)
-	line, err := b.ReadString('\n')
-	if err != nil {
-		log.Printf("Failed to read response code from vpnkit-expose-port: %s", err)
-		return nil, err
-	}
-	if line == "1\n" {
-		msg, err := ioutil.ReadAll(b)
-		if err != nil {
-			log.Printf("Failed to read the error message from vpnkit-expose-port: %s", err)
-		}
-		return nil, errors.New(string(msg))
-	}
-	// Leave the process running
-	return &common.ExposeResponse{}, nil
+	IP := localAddr[0:idx]
+	log.Printf("Discovered local external IP address is: %s", IP)
+	return &common.GetIPResponse{IP}, nil
 }
 
 // HTTP server follows:
@@ -118,7 +70,7 @@ type HTTPListener struct {
 func (h HTTPListener) Serve() error {
 	http.HandleFunc("/", h.pingHandler())
 	http.HandleFunc("/init", h.initHandler())
-	http.HandleFunc("/expose", h.exposeHandler())
+	http.HandleFunc("/get_ip", h.getIPHandler())
 	server := &http.Server{}
 	return server.Serve(h.Listener)
 }
@@ -158,20 +110,10 @@ func (h HTTPListener) initHandler() func(http.ResponseWriter, *http.Request) {
 	}
 }
 
-// Return a handler for exposing the port
-func (h HTTPListener) exposeHandler() func(http.ResponseWriter, *http.Request) {
+// Return a handler for querying the IP
+func (h HTTPListener) getIPHandler() func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var req common.ExposeRequest
-		if r.Body == nil {
-			http.Error(w, "Please send a request body", 400)
-			return
-		}
-		err := json.NewDecoder(r.Body).Decode(&req)
-		if err != nil {
-			http.Error(w, err.Error(), 400)
-			return
-		}
-		res, err := doExpose(req)
+		res, err := doGetIP()
 		if err != nil {
 			http.Error(w, err.Error(), 400)
 			return

@@ -12,18 +12,14 @@ type InitRequest struct {
 
 // InitResponse returns the response from `kubeadm init`
 type InitResponse struct {
-	AdminConf  string `json:"admin_conf"`  // the admin.conf containing the private keys
-	InternalIP string `json:"internal_ip"` // IP of the master
+	AdminConf string `json:"admin_conf"` // the admin.conf containing the private keys
 }
 
-// Expose is the /path for the request to expose the HTTPS port on the host
-const Expose = "/expose"
+// GetIP is the /path for the request to query the external IP of the VM suitable
+// for port forwarding via vpnkit
+const GetIP = "/get_ip"
 
-// ExposeRequest is the arguments for exposing the port
-type ExposeRequest struct {
-	ExternalPort int `json:"external_port"` // the port on the host
-}
-
-// ExposeResponse returns the response from exposing the port
-type ExposeResponse struct {
+// GetIPResponse returns the response from exposing the port
+type GetIPResponse struct {
+	IP string `json:"ip"` // IP of the master
 }

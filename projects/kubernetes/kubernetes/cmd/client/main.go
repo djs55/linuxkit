@@ -99,6 +99,25 @@ func main() {
 	}
 
 	if *expose != 0 {
+		response, err := httpc.Get("http://unix" + common.GetIP)
+		if err != nil {
+			log.Fatalf("Failed to invoke get_ip: %s", err)
+		}
+		defer response.Body.Close()
+		if response.StatusCode != 200 {
+			msg, err := ioutil.ReadAll(response.Body)
+			if err != nil {
+				log.Fatalf("Failed to read error message from get_ip: %s", err)
+			}
+			log.Fatalf("get_ip failed with: %s", msg)
+		}
+		var res common.GetIPResponse
+		err = json.NewDecoder(response.Body).Decode(&res)
+		if err != nil {
+			log.Fatalf("Failed to parse result of get_ip: %s", err)
+		}
+		log.Printf("get_ip returned %v\n", res)
+
 		// expose the port
 		c, err := vpnkit.NewConnection(context.Background(), *vpnkitPath)
 		if err != nil {
@@ -107,7 +126,7 @@ func main() {
 		proto := "tcp"
 		outIP := net.ParseIP("0.0.0.0")
 		outPort := int16(*expose)
-		inIP := net.ParseIP("127.0.0.1")
+		inIP := net.ParseIP(res.IP)
 		inPort := int16(*expose)
 		p := vpnkit.NewPort(c, proto, outIP, outPort, inIP, inPort)
 		if err = p.Expose(context.Background()); err != nil {
