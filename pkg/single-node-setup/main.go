@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -26,12 +27,24 @@ type InitResponse struct {
 	AdminConf string `json:"admin_conf"` // the admin.conf containing the private keys
 }
 
+func doInit(req InitRequest) (InitResponse, error) {
+	log.Printf("Received init request %v", req)
+	AdminConf := ""
+	res := InitResponse{AdminConf}
+	return res, nil
+}
+
 // Expose is the /path for the request to expose the HTTPS port on the host
 const Expose = "/expose"
 
 // ExposeRequest is the arguments for exposing the port
 type ExposeRequest struct {
 	ExternalPort int `json:"external_port"` // the port on the host
+}
+
+func doExpose(req ExposeRequest) error {
+	log.Printf("Received expose request %v", req)
+	return nil
 }
 
 // HTTPListener responds to HTTP on the AF_VSOCK listening socket
@@ -42,6 +55,8 @@ type HTTPListener struct {
 // Serve responds to HTTP requests forever
 func (h HTTPListener) Serve() error {
 	http.HandleFunc("/", h.pingHandler())
+	http.HandleFunc("/init", h.initHandler())
+	http.HandleFunc("/expose", h.exposeHandler())
 	server := &http.Server{}
 	return server.Serve(h.Listener)
 }
@@ -53,6 +68,49 @@ func (h HTTPListener) pingHandler() func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if _, err := w.Write([]byte(pingOK)); err != nil {
 			log.Println("Error writing HTTP success response:", err)
+			return
+		}
+	}
+}
+
+// Return a handler for invoking `kubeadm init`
+func (h HTTPListener) initHandler() func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req InitRequest
+		if r.Body == nil {
+			http.Error(w, "Please send a request body", 400)
+			return
+		}
+		err := json.NewDecoder(r.Body).Decode(&req)
+		if err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		res, err := doInit(req)
+		if err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		json.NewEncoder(w).Encode(res)
+	}
+}
+
+// Return a handler for exposing the port
+func (h HTTPListener) exposeHandler() func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req ExposeRequest
+		if r.Body == nil {
+			http.Error(w, "Please send a request body", 400)
+			return
+		}
+		err := json.NewDecoder(r.Body).Decode(&req)
+		if err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		err = doExpose(req)
+		if err != nil {
+			http.Error(w, err.Error(), 400)
 			return
 		}
 	}
