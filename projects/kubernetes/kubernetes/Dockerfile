@@ -56,7 +56,9 @@ RUN mkdir -p $GOPATH/src/github.com/linuxkit && \
   cd virtsock && \
   git checkout $VIRTSOCK_COMMIT
 RUN mkdir -p /go/src/kube-setup-server
-COPY kube-setup-server/*  /go/src/kube-setup-server/
+COPY cmd/server/*  /go/src/kube-setup-server/
+RUN mkdir -p /go/src/github.com/linuxkit/linuxkit/projects/kubernetes/kubernetes/pkg/common
+COPY pkg/common/* /go/src/github.com/linuxkit/linuxkit/projects/kubernetes/kubernetes/pkg/common
 RUN go-compile.sh /go/src/kube-setup-server
 
 FROM scratch

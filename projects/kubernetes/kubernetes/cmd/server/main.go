@@ -16,25 +16,12 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/linuxkit/linuxkit/projects/kubernetes/kubernetes/pkg/common"
+
 	"github.com/linuxkit/virtsock/pkg/vsock"
 )
 
-// Init is the /path for the `kubeadm init` RPC
-const Init = "/init"
-
-// InitRequest is the arguments for `kubeadm init`
-type InitRequest struct {
-	NodeName string `json:"node_name"` // used in the certificate. Must resolve on the host to a local interface
-	Version  string `json:"version"`   // requested Kubernetes version
-}
-
-// InitResponse returns the response from `kubeadm init`
-type InitResponse struct {
-	AdminConf  string `json:"admin_conf"`  // the admin.conf containing the private keys
-	InternalIP string `json:"internal_ip"` // IP of the master
-}
-
-func doInit(req InitRequest) (*InitResponse, error) {
+func doInit(req common.InitRequest) (*common.InitResponse, error) {
 	log.Printf("Received init request %v", req)
 
 	args := []string{"init", "--skip-preflight-checks", "--node-name", req.NodeName, "--kubernetes-version", req.Version}
@@ -67,22 +54,10 @@ func doInit(req InitRequest) (*InitResponse, error) {
 	InternalIP := localAddr[0:idx]
 	log.Printf("Discovered local external IP address is: %s", InternalIP)
 
-	return &InitResponse{AdminConf, InternalIP}, nil
+	return &common.InitResponse{AdminConf, InternalIP}, nil
 }
 
-// Expose is the /path for the request to expose the HTTPS port on the host
-const Expose = "/expose"
-
-// ExposeRequest is the arguments for exposing the port
-type ExposeRequest struct {
-	ExternalPort int `json:"external_port"` // the port on the host
-}
-
-// ExposeResponse returns the response from exposing the port
-type ExposeResponse struct {
-}
-
-func doExpose(req ExposeRequest) (*ExposeResponse, error) {
+func doExpose(req common.ExposeRequest) (*common.ExposeResponse, error) {
 	log.Printf("Received expose request %v", req)
 
 	// Discover the IP on the same subnet as the vpnkit gateway, so we tell vpnkit
@@ -129,7 +104,7 @@ func doExpose(req ExposeRequest) (*ExposeResponse, error) {
 		return nil, errors.New(string(msg))
 	}
 	// Leave the process running
-	return &ExposeResponse{}, nil
+	return &common.ExposeResponse{}, nil
 }
 
 // HTTP server follows:
@@ -163,7 +138,7 @@ func (h HTTPListener) pingHandler() func(http.ResponseWriter, *http.Request) {
 // Return a handler for invoking `kubeadm init`
 func (h HTTPListener) initHandler() func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var req InitRequest
+		var req common.InitRequest
 		if r.Body == nil {
 			http.Error(w, "Please send a request body", 400)
 			return
@@ -186,7 +161,7 @@ func (h HTTPListener) initHandler() func(http.ResponseWriter, *http.Request) {
 // Return a handler for exposing the port
 func (h HTTPListener) exposeHandler() func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var req ExposeRequest
+		var req common.ExposeRequest
 		if r.Body == nil {
 			http.Error(w, "Please send a request body", 400)
 			return

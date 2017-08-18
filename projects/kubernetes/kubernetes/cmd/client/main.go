@@ -14,36 +14,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/linuxkit/linuxkit/projects/kubernetes/kubernetes/pkg/common"
 )
 
 // Invoke the `kubeadm init` service
-
-// Init is the /path for the `kubeadm init` RPC
-const Init = "/init"
-
-// InitRequest is the arguments for `kubeadm init`
-type InitRequest struct {
-	NodeName string `json:"node_name"` // used in the certificate. Must resolve on the host to a local interface
-	Version  string `json:"version"`   // requested Kubernetes version
-}
-
-// InitResponse returns the response from `kubeadm init`
-type InitResponse struct {
-	AdminConf  string `json:"admin_conf"`  // the admin.conf containing the private keys
-	InternalIP string `json:"internal_ip"` // IP of the master
-}
-
-// Expose is the /path for the request to expose the HTTPS port on the host
-const Expose = "/expose"
-
-// ExposeRequest is the arguments for exposing the port
-type ExposeRequest struct {
-	ExternalPort int `json:"external_port"` // the port on the host
-}
-
-// ExposeResponse returns the response from exposing the port
-type ExposeResponse struct {
-}
 
 func main() {
 	// single-node-client -path <path to connect socket> [-init] [-expose]
@@ -90,10 +65,10 @@ func main() {
 			log.Fatalf("Failed to determine the local hostname: %s", err)
 		}
 		Version := *version
-		req := InitRequest{NodeName, Version}
+		req := common.InitRequest{NodeName, Version}
 		reqBody := new(bytes.Buffer)
 		json.NewEncoder(reqBody).Encode(req)
-		response, err := httpc.Post("http://unix"+Init, "application/json", reqBody)
+		response, err := httpc.Post("http://unix"+common.Init, "application/json", reqBody)
 		if err != nil {
 			log.Fatalf("Failed to invoke init: %s", err)
 		}
@@ -105,7 +80,7 @@ func main() {
 			}
 			log.Fatalf("Init failed with: %s", msg)
 		}
-		var res InitResponse
+		var res common.InitResponse
 		err = json.NewDecoder(response.Body).Decode(&res)
 		if err != nil {
 			log.Fatalf("Failed to parse result of init: %s", err)
@@ -123,10 +98,10 @@ func main() {
 
 	if *expose != 0 {
 		// expose the port
-		req := ExposeRequest{ExternalPort: *expose}
+		req := common.ExposeRequest{ExternalPort: *expose}
 		reqBody := new(bytes.Buffer)
 		json.NewEncoder(reqBody).Encode(req)
-		response, err := httpc.Post("http://unix"+Expose, "application/json", reqBody)
+		response, err := httpc.Post("http://unix"+common.Expose, "application/json", reqBody)
 		if err != nil {
 			log.Fatalf("Failed to invoke expose: %s", err)
 		}
@@ -138,7 +113,7 @@ func main() {
 			}
 			log.Fatalf("Expose failed with: %s", msg)
 		}
-		var res ExposeResponse
+		var res common.ExposeResponse
 		err = json.NewDecoder(response.Body).Decode(&res)
 		if err != nil {
 			log.Fatalf("Failed to parse result of expose: %s", err)
