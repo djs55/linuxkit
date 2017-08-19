@@ -44,8 +44,6 @@ ADD kubelet.sh /out/usr/bin/kubelet.sh
 ADD kubeadm-init.sh /kubeadm-init.sh
 RUN sed -e "s/@KUBERNETES_VERSION@/${kubernetes_version}/g" </kubeadm-init.sh >/out/usr/bin/kubeadm-init.sh && chmod +x /out/usr/bin/kubeadm-init.sh
 
-FROM linuxkit/vpnkit-forwarder:9c1545e7b093d1210118de7661d7346393ec195b AS vpnkit
-
 FROM linuxkit/alpine:87a0cd10449d72f374f950004467737dbf440630 AS setup
 RUN apk add --no-cache go musl-dev git build-base
 ENV GOPATH=/go PATH=$PATH:/go/bin
@@ -65,7 +63,6 @@ FROM scratch
 WORKDIR /
 ENTRYPOINT ["/usr/bin/kubelet.sh"]
 COPY --from=build /out /
-COPY --from=vpnkit / /
 COPY --from=setup /go/bin/kube-setup-server /usr/bin/kube-setup-server
 ENV KUBECONFIG "/etc/kubernetes/admin.conf"
 LABEL org.mobyproject.config='{"binds": ["/dev:/dev", "/etc/resolv.conf:/etc/resolv.conf", "/run:/run", "/var:/var:rshared,rbind", "/var/lib/kubeadm:/etc/kubernetes", "/etc/cni:/rootfs/etc/cni:rshared,rbind", "/opt/cni:/rootfs/opt/cni:rshared,rbind"], "mounts": [{"type": "cgroup", "options": ["rw","nosuid","noexec","nodev","relatime"]}], "capabilities": ["all"], "rootfsPropagation": "shared", "pid": "host"}'
