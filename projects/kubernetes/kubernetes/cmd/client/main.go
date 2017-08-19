@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/linuxkit/linuxkit/projects/kubernetes/kubernetes/pkg/common"
@@ -20,6 +21,15 @@ import (
 )
 
 // Invoke the `kubeadm init` service
+
+// Rewrite the server: in the .kube/config to point to localhost rather than an
+// internal IP e.g. instead of
+//   server: https://192.168.65.3:6443
+// we should have
+//   server: https://localhost:6443
+func rewriteKubeConf(original string) string {
+	return regexp.MustCompile(`server: https://[\d\.]+:6443`).ReplaceAllString(original, "server: https://localhost:6443")
+}
 
 func main() {
 	// single-node-client -path <path to connect socket> [-init] [-expose]
@@ -88,12 +98,13 @@ func main() {
 			log.Fatalf("Failed to parse result of init: %s", err)
 		}
 		log.Printf("Init returned %v\n", res)
+		conf := rewriteKubeConf(res.AdminConf)
 		kubeDir := filepath.Join(os.Getenv("HOME"), ".kube")
 		if err = os.MkdirAll(kubeDir, os.ModePerm); err != nil {
 			log.Fatalf("Failed to create %s: %s", kubeDir, err)
 		}
 		configPath := filepath.Join(kubeDir, "config")
-		if err = ioutil.WriteFile(configPath, []byte(res.AdminConf), 0644); err != nil {
+		if err = ioutil.WriteFile(configPath, []byte(conf), 0644); err != nil {
 			log.Fatalf("Failed to write %s: %s", configPath, err)
 		}
 	}
