@@ -13,9 +13,9 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/linuxkit/linuxkit/projects/kubernetes/kubernetes/pkg/common"
-
 	"github.com/linuxkit/virtsock/pkg/vsock"
 )
 
@@ -23,24 +23,72 @@ func doInit(req common.InitRequest) (*common.InitResponse, error) {
 	log.Printf("Received init request %v", req)
 
 	args := []string{"init", "--skip-preflight-checks", "--node-name", req.NodeName, "--kubernetes-version", req.Version}
-	if err := exec.Command("/usr/bin/kubeadm", args...).Run(); err != nil {
+	kubeadm := exec.Command("/usr/bin/kubeadm", args...)
+	kubeadm.Stdout = os.Stderr
+	kubeadm.Stderr = os.Stderr
+	if err := kubeadm.Start(); err != nil {
 		log.Printf("Failed to run kubeadm %s: %s", strings.Join(args, " "), err)
 		return nil, err
 	}
+	log.Printf("Launched /usr/bin/kubeadm")
+
+	go func() {
+		// Start the kubelet in the background. This will fail until the directory
+		// structure has been created by `kubeadm init` above. The `kubeadm init`
+		// will block until the `kubelet` has done some work.
+		args = []string{"--kubeconfig=/var/lib/kubeadm/kubelet.conf",
+			"--require-kubeconfig=true",
+			"--pod-manifest-path=/var/lib/kubeadm/manifests",
+			"--allow-privileged=true",
+			"--cluster-dns=10.96.0.10",
+			"--hostname-override=" + req.NodeName,
+			"--cluster-domain=cluster.local",
+			"--cgroups-per-qos=false",
+			"--enforce-node-allocatable=",
+			"--network-plugin=cni",
+			"--cni-conf-dir=/etc/cni/net.d",
+			"--cni-bin-dir=/opt/cni/bin"}
+		for {
+			kubelet := exec.Command("/usr/bin/kubelet", args...)
+			kubelet.Stdout = os.Stderr
+			kubelet.Stderr = os.Stderr
+			if err := kubelet.Run(); err != nil {
+				log.Printf("Failed to run kubelet %s: %s", strings.Join(args, " "), err)
+				time.Sleep(500 * time.Millisecond)
+			}
+		}
+	}()
+
+	// Wait for kubeadm to complete
+	if err := kubeadm.Wait(); err != nil {
+		return nil, err
+	}
+	log.Printf("/usr/bin/kubeadm complete")
+
 	args = []string{"create", "-n", "kube-system", "-f", "/etc/weave.yaml"}
-	if err := exec.Command("/usr/bin/kubectl", args...).Run(); err != nil {
+	kubectl := exec.Command("/usr/bin/kubectl", args...)
+	kubectl.Stdout = os.Stderr
+	kubectl.Stderr = os.Stderr
+	if err := kubectl.Run(); err != nil {
 		log.Printf("Failed to run kubectl %s: %s", strings.Join(args, " "), err)
 		return nil, err
 	}
-	// read /etc/kubernetes/admin.conf
-	b, err := ioutil.ReadFile("/etc/kubernetes/admin.conf")
-	if err != nil {
-		log.Printf("Failed to read /etc/kubernetes/admin.conf: %s", err)
-		return nil, err
-	}
-	AdminConf := string(b)
 
-	return &common.InitResponse{AdminConf}, nil
+	for {
+		// read /etc/kubernetes/admin.conf
+		b, err := ioutil.ReadFile("/etc/kubernetes/admin.conf")
+		if err != nil {
+			if os.IsNotExist(err) {
+				time.Sleep(500 * time.Millisecond)
+				continue
+			}
+			log.Printf("Failed to read /etc/kubernetes/admin.conf: %s", err)
+			return nil, err
+		}
+		AdminConf := string(b)
+
+		return &common.InitResponse{AdminConf}, nil
+	}
 }
 
 func doGetIP() (*common.GetIPResponse, error) {
