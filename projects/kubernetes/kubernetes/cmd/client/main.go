@@ -72,10 +72,8 @@ func main() {
 
 	if *init {
 		// initialise the cluster
-		NodeName, err := os.Hostname()
-		if err != nil {
-			log.Fatalf("Failed to determine the local hostname: %s", err)
-		}
+		// The NodeName will end up in the SSL certificate and must match the config file
+		NodeName := "localhost"
 		Version := *version
 		req := common.InitRequest{NodeName: NodeName, Version: Version}
 		reqBody := new(bytes.Buffer)
