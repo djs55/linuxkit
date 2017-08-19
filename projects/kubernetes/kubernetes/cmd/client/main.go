@@ -128,7 +128,8 @@ func main() {
 		log.Printf("get_ip returned %v\n", res)
 
 		// expose the port
-		c, err := vpnkit.NewConnection(context.Background(), *vpnkitPath)
+		ctx := context.TODO()
+		c, err := vpnkit.NewConnection(ctx, *vpnkitPath)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -137,6 +138,20 @@ func main() {
 		outPort := int16(*expose)
 		inIP := net.ParseIP(res.IP)
 		inPort := int16(*expose)
+		// clear any existing port forward
+		current, err := vpnkit.ListExposed(c)
+		if err != nil {
+			log.Fatal(err)
+		}
+		for _, p := range current {
+			if p.OutPort() == outPort {
+				log.Printf("Clearing existing port forward: %s", p.String())
+				if err = p.Unexpose(ctx); err != nil {
+					log.Fatal(err)
+				}
+			}
+		}
+
 		p := vpnkit.NewPort(c, proto, outIP, outPort, inIP, inPort)
 		if err = p.Expose(context.Background()); err != nil {
 			log.Fatal(err)
