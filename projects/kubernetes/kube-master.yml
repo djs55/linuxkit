@@ -56,6 +56,13 @@ services:
      - /opt/cni:/opt/cni:rshared,rbind
     rootfsPropagation: shared
     command: ["/usr/local/bin/docker-init", "/usr/local/bin/dockerd"]
+    # VSOCK to unix domain socket forwarding. Forwards guest /var/run/docker.sock
+    # to a socket on the host.
+  - name: vsudd
+    image: linuxkit/vsudd:adad4b6ab7529b6b95339eb0752b0c81a218d185
+    binds:
+     - /var/run:/var/run
+    command: ["/vsudd", "-inport", "2376:unix:/var/run/docker.sock"]
   - name: vpnkit-forwarder
     image: linuxkit/vpnkit-forwarder:9c1545e7b093d1210118de7661d7346393ec195b
     net: host
