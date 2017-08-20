@@ -9,10 +9,10 @@ import (
 	"github.com/linuxkit/linuxkit/projects/kubernetes/kubernetes/pkg/config"
 )
 
-// Invoke the `kubeadm init` service
+// Connect to the VM and configure a single host kubernetes cluster with
+// port forwarding from the host.
 
 func main() {
-	// single-node-client -path <path to connect socket> [-init] [-expose]
 	path := flag.String("path", os.Getenv("HOME")+"/Library/Containers/com.docker.docker/Data/connect", "path to connect socket")
 	vpnkitPath := flag.String("vpnkit-control-path", os.Getenv("HOME")+"/Library/Containers/com.docker.docker/Data/s51", "path to vpnkit's control socket")
 	expose := flag.Int("expose", 6443, "TCP port to expose")
