@@ -56,12 +56,16 @@ services:
      - /opt/cni:/opt/cni:rshared,rbind
     rootfsPropagation: shared
     command: ["/usr/local/bin/docker-init", "/usr/local/bin/dockerd"]
+  - name: vpnkit-forwarder
+    image: linuxkit/vpnkit-forwarder:9c1545e7b093d1210118de7661d7346393ec195b
+    net: host
+    command: ["/vpnkit-forwarder", "-vsockPort", "62373"]
   - name: kubernetes-image-cache-common
     image: linuxkitprojects/kubernetes-image-cache-common:ba16b1f8cfe4f415a5946d521e59f67eaeecd9ce
   - name: kubernetes-image-cache-control-plane
     image: linuxkitprojects/kubernetes-image-cache-control-plane:ba16b1f8cfe4f415a5946d521e59f67eaeecd9ce
   - name: kubelet
-    image: linuxkitprojects/kubernetes:bbf14d70199babeea1f71f5b0bd70c1c1c9b5cd2
+    image: linuxkitprojects/kubernetes:a843c514368d13b7cf62b881651950d9006bb933-dirty-amd64
 files:
   - path: root/.ssh/authorized_keys
     source: ~/.ssh/id_rsa.pub
