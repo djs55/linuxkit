@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/linuxkit/linuxkit/projects/kubernetes/kubernetes/pkg/common"
+	"github.com/linuxkit/linuxkit/projects/kubernetes/kubernetes/pkg/config"
 )
 
 // Invoke the `kubeadm init` service
@@ -29,7 +29,7 @@ func main() {
 
 	flag.Parse()
 
-	c := &common.Configuration{
+	c := &config.Configuration{
 		ExternalPort:    uint16(*expose),
 		Version:         *version,
 		HyperkitConnect: *path,

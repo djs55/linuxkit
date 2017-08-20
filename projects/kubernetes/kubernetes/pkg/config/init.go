@@ -1,4 +1,5 @@
-package common
+// initialise a kubernetes service running in a CM
+package config
 
 import (
 	"bytes"
@@ -16,6 +17,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/linuxkit/linuxkit/projects/kubernetes/kubernetes/pkg/common"
 	"github.com/moby/vpnkit/go/pkg/vpnkit"
 )
 
@@ -101,10 +103,10 @@ func (c *Configuration) applyDefaults() {
 func (c *Configuration) initKubernetes() error {
 	httpc := c.httpClient()
 	// The NodeName will end up in the SSL certificate and must match the config file
-	req := InitRequest{NodeName: c.NodeName, Version: c.Version}
+	req := common.InitRequest{NodeName: c.NodeName, Version: c.Version}
 	reqBody := new(bytes.Buffer)
 	json.NewEncoder(reqBody).Encode(req)
-	response, err := httpc.Post("http://unix"+Init, "application/json", reqBody)
+	response, err := httpc.Post("http://unix"+common.Init, "application/json", reqBody)
 	if err != nil {
 		log.Printf("Failed to invoke init: %s", err)
 		return err
@@ -119,7 +121,7 @@ func (c *Configuration) initKubernetes() error {
 		log.Printf("Init failed with: %s", msg)
 		return errors.New(string(msg))
 	}
-	var res InitResponse
+	var res common.InitResponse
 	err = json.NewDecoder(response.Body).Decode(&res)
 	if err != nil {
 		log.Printf("Failed to parse result of init: %s", err)
@@ -144,7 +146,7 @@ func (c *Configuration) initKubernetes() error {
 // suitable for using as a port forward destination.
 func (c *Configuration) getPrivateIP() (string, error) {
 	httpc := c.httpClient()
-	response, err := httpc.Get("http://unix" + GetIP)
+	response, err := httpc.Get("http://unix" + common.GetIP)
 	if err != nil {
 		log.Printf("Failed to invoke get_ip: %s", err)
 		return "", err
@@ -159,7 +161,7 @@ func (c *Configuration) getPrivateIP() (string, error) {
 		log.Printf("get_ip failed with: %s", msg)
 		return "", errors.New(string(msg))
 	}
-	var res GetIPResponse
+	var res common.GetIPResponse
 	err = json.NewDecoder(response.Body).Decode(&res)
 	if err != nil {
 		log.Printf("Failed to parse result of get_ip: %s", err)
