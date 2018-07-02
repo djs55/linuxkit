@@ -1,0 +1,4 @@
+image: logwrite
+binds:
+    - /var/run:/var/run
+    - /var/log:/var/log
