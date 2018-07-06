@@ -24,6 +24,12 @@ services:
   - name: write-to-the-logs
     image: alpine
     command: ["/bin/sh", "-c", "while /bin/true; do echo hello $(date); sleep 1; done" ]
+  - name: kmsg
+    image: linuxkit/kmsg:862384637bd541d499b2f1356f71a1d304f79cb5
+    binds:
+      - /dev/kmsg:/dev/kmsg
+    capabilities:
+      - CAP_SYSLOG
 trust:
   org:
     - linuxkit
