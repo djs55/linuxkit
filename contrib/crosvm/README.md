@@ -33,7 +33,7 @@ kernel:
   image: linuxkit/kernel:4.9.91
   cmdline: "console=tty0 console=ttyS0 console=ttyAMA0"
 init:
-  - linuxkit/init:0e4af96fecc8f752c80d41c0b7d06570cc1dc6b2
+  - linuxkit/init:4fa16c9045d60732dadb04f5d7f5c18d83c6551e
   - linuxkit/runc:v0.4
   - linuxkit/containerd:27a4c84cc8fab2d5ea04342546ecd20453ec99b3
 services:
