@@ -78,7 +78,8 @@ func runcInit(rootPath, serviceType string) int {
 		pidfile := filepath.Join(tmpdir, name)
 		cmd := exec.Command(runcBinary, "create", "--bundle", path, "--pid-file", pidfile, name)
 
-		stdout, err := logger.Open(serviceType + "." + name + ".out")
+		stdoutLog := serviceType + "." + name + ".out"
+		stdout, err := logger.Open(stdoutLog)
 		if err != nil {
 			log.Printf("Error opening stdout log connection: %v", err)
 			status = 1
@@ -86,7 +87,8 @@ func runcInit(rootPath, serviceType string) int {
 		}
 		defer stdout.Close()
 
-		stderr, err := logger.Open(serviceType + "." + name + ".err")
+		stderrLog := serviceType + "." + name + ".err"
+		stderr, err := logger.Open(stderrLog)
 		if err != nil {
 			log.Printf("Error opening stderr log connection: %v", err)
 			status = 1
@@ -147,12 +149,13 @@ func runcInit(rootPath, serviceType string) int {
 
 		cleanup(path)
 		_ = os.Remove(pidfile)
-	}
 
-	// ideally we want to use io.MultiWriter here, sending one stream to stdout/stderr, another to the log
-	// however, this hangs if we do, due to a runc bug, see https://github.com/opencontainers/runc/issues/1721#issuecomment-366315563
-	// once that is fixed, this can be cleaned up
-	logger.DumpAll()
+		// ideally we want to use io.MultiWriter here, sending one stream to stdout/stderr, another to the log
+		// however, this hangs if we do, due to a runc bug, see https://github.com/opencontainers/runc/issues/1721#issuecomment-366315563
+		// once that is fixed, this can be cleaned up
+		logger.Dump(stdoutLog)
+		logger.Dump(stderrLog)
+	}
 
 	_ = os.RemoveAll(tmpdir)
 

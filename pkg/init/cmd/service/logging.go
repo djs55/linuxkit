@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	log "github.com/sirupsen/logrus"
@@ -28,7 +28,7 @@ const (
 type Log interface {
 	Path(string) string                  // Path of the log file (may be a FIFO)
 	Open(string) (io.WriteCloser, error) // Opens a log stream
-	DumpAll()                            // Copies all the logs to the console
+	Dump(string)                         // Copies logs to the console
 }
 
 // GetLog returns the log destination we should use.
@@ -74,21 +74,11 @@ func (f *fileLog) Open(n string) (io.WriteCloser, error) {
 	return os.OpenFile(f.localPath(n), os.O_WRONLY|os.O_CREATE, 0644)
 }
 
-// DumpAll copies all the logs to the console.
-func (f *fileLog) DumpAll() {
-	all, err := ioutil.ReadDir(f.dir)
-	if err != nil {
-		fmt.Printf("Error writing %s/*.log to console: %v", f.dir, err)
-		return
-	}
-	for _, fi := range all {
-		path := filepath.Join(f.dir, fi.Name())
-		if filepath.Ext(path) != ".log" {
-			continue
-		}
-		if err := dumpFile(os.Stdout, path); err != nil {
-			fmt.Printf("Error writing %s to console: %v", path, err)
-		}
+// Dump copies logs to the console.
+func (f *fileLog) Dump(n string) {
+	path := f.localPath(n)
+	if err := dumpFile(os.Stdout, path); err != nil {
+		fmt.Printf("Error writing %s to console: %v", path, err)
 	}
 }
 
@@ -133,8 +123,8 @@ func (r *remoteLog) Open(n string) (io.WriteCloser, error) {
 	return logFile, nil
 }
 
-// DumpAll copies all the logs to the console.
-func (r *remoteLog) DumpAll() {
+// Dump copies logs to the console.
+func (r *remoteLog) Dump(n string) {
 	addr := net.UnixAddr{
 		Name: logReadSocket,
 		Net:  "unix",
@@ -145,15 +135,32 @@ func (r *remoteLog) DumpAll() {
 		return
 	}
 	defer conn.Close()
-	n, err := conn.Write([]byte{logDumpCommand})
-	if err != nil || n < 1 {
+	nWritten, err := conn.Write([]byte{logDumpCommand})
+	if err != nil || nWritten < 1 {
 		log.Printf("Failed to request logs from logger: %s", err)
 		return
 	}
-
-	_, err = bufio.NewReader(conn).WriteTo(os.Stdout)
-	if err != nil {
-		log.Printf("Failed to read logs from logger: %s", err)
+	reader := bufio.NewReader(conn)
+	for {
+		line, err := reader.ReadString('\n')
+		if err == io.EOF {
+			return
+		}
+		if err != nil {
+			log.Printf("Failed to read log message: %s", err)
+			return
+		}
+		// a line is of the form
+		// <timestamp>,<log>;<body>
+		prefixBody := strings.SplitN(line, ";", 2)
+		csv := strings.Split(prefixBody[0], ",")
+		if len(csv) < 2 {
+			log.Printf("Failed to parse log message: %s", line)
+			continue
+		}
+		if csv[1] == n {
+			fmt.Print(line)
+		}
 	}
 }
 
