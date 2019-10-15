@@ -1,0 +1,223 @@
+From 3e845ba4f87bdd54ae34e3430595409728d13f73 Mon Sep 17 00:00:00 2001
+From: Dan Schatzberg <dschatzberg@fb.com>
+Date: Thu, 11 Oct 2018 08:17:00 -0700
+Subject: [PATCH 29/29] fuse: enable caching of symlinks
+
+FUSE file reads are cached in the page cache, but symlink reads are
+not. This patch enables FUSE READLINK operations to be cached which
+can improve performance of some FUSE workloads.
+
+In particular, I'm working on a FUSE filesystem for access to source
+code and discovered that about a 10% improvement to build times is
+achieved with this patch (there are a lot of symlinks in the source
+tree).
+
+Signed-off-by: Miklos Szeredi <mszeredi@redhat.com>
+---
+ fs/fuse/dir.c             | 108 +++++++++++++++++++++++++++++++++++-----------
+ fs/fuse/fuse_i.h          |   3 ++
+ fs/fuse/inode.c           |   4 +-
+ include/uapi/linux/fuse.h |   3 ++
+ 4 files changed, 92 insertions(+), 26 deletions(-)
+
+diff --git a/fs/fuse/dir.c b/fs/fuse/dir.c
+index 139ed0c..fc38d6f 100644
+--- a/fs/fuse/dir.c
++++ b/fs/fuse/dir.c
+@@ -1160,38 +1160,78 @@ static int fuse_permission(struct inode *inode, int mask)
+ 	return err;
+ }
+ 
+-static const char *fuse_get_link(struct dentry *dentry,
+-				 struct inode *inode,
+-				 struct delayed_call *done)
++static int fuse_readlink_page(struct inode *inode, struct page *page)
+ {
+ 	struct fuse_conn *fc = get_fuse_conn(inode);
+-	FUSE_ARGS(args);
+-	char *link;
+-	ssize_t ret;
++	struct fuse_req *req;
++	int err;
+ 
+-	if (!dentry)
+-		return ERR_PTR(-ECHILD);
++	req = fuse_get_req(fc, 1);
++	if (IS_ERR(req))
++		return PTR_ERR(req);
++
++	req->out.page_zeroing = 1;
++	req->out.argpages = 1;
++	req->num_pages = 1;
++	req->pages[0] = page;
++	req->page_descs[0].length = PAGE_SIZE - 1;
++	req->in.h.opcode = FUSE_READLINK;
++	req->in.h.nodeid = get_node_id(inode);
++	req->out.argvar = 1;
++	req->out.numargs = 1;
++	req->out.args[0].size = PAGE_SIZE - 1;
++	fuse_request_send(fc, req);
++	err = req->out.h.error;
+ 
+-	link = kmalloc(PAGE_SIZE, GFP_KERNEL);
+-	if (!link)
+-		return ERR_PTR(-ENOMEM);
++	if (!err) {
++		char *link = page_address(page);
++		size_t len = req->out.args[0].size;
+ 
+-	args.in.h.opcode = FUSE_READLINK;
+-	args.in.h.nodeid = get_node_id(inode);
+-	args.out.argvar = 1;
+-	args.out.numargs = 1;
+-	args.out.args[0].size = PAGE_SIZE - 1;
+-	args.out.args[0].value = link;
+-	ret = fuse_simple_request(fc, &args);
+-	if (ret < 0) {
+-		kfree(link);
+-		link = ERR_PTR(ret);
+-	} else {
+-		link[ret] = '\0';
+-		set_delayed_call(done, kfree_link, link);
++		BUG_ON(len >= PAGE_SIZE);
++		link[len] = '\0';
+ 	}
++
++	fuse_put_request(fc, req);
+ 	fuse_invalidate_atime(inode);
+-	return link;
++
++	return err;
++}
++
++static const char *fuse_get_link(struct dentry *dentry, struct inode *inode,
++				 struct delayed_call *callback)
++{
++	struct fuse_conn *fc = get_fuse_conn(inode);
++	struct page *page;
++	int err;
++
++	err = -EIO;
++	if (is_bad_inode(inode))
++		goto out_err;
++
++	if (fc->cache_symlinks)
++		return page_get_link(dentry, inode, callback);
++
++	err = -ECHILD;
++	if (!dentry)
++		goto out_err;
++
++	page = alloc_page(GFP_KERNEL);
++	err = -ENOMEM;
++	if (!page)
++		goto out_err;
++
++	err = fuse_readlink_page(inode, page);
++	if (err) {
++		__free_page(page);
++		goto out_err;
++	}
++
++	set_delayed_call(callback, page_put_link, page);
++
++	return page_address(page);
++
++out_err:
++	return ERR_PTR(err);
+ }
+ 
+ static int fuse_dir_open(struct inode *inode, struct file *file)
+@@ -1644,7 +1684,25 @@ void fuse_init_dir(struct inode *inode)
+ 	fi->rdc.version = 0;
+ }
+ 
++static int fuse_symlink_readpage(struct file *null, struct page *page)
++{
++	int err = fuse_readlink_page(page->mapping->host, page);
++
++	if (!err)
++		SetPageUptodate(page);
++
++	unlock_page(page);
++
++	return err;
++}
++
++static const struct address_space_operations fuse_symlink_aops = {
++	.readpage	= fuse_symlink_readpage,
++};
++
+ void fuse_init_symlink(struct inode *inode)
+ {
+ 	inode->i_op = &fuse_symlink_inode_operations;
++	inode->i_data.a_ops = &fuse_symlink_aops;
++	inode_nohighmem(inode);
+ }
+diff --git a/fs/fuse/fuse_i.h b/fs/fuse/fuse_i.h
+index 9f44a3c..e37c680 100644
+--- a/fs/fuse/fuse_i.h
++++ b/fs/fuse/fuse_i.h
+@@ -616,6 +616,9 @@ struct fuse_conn {
+ 	/** handle fs handles killing suid/sgid/cap on write/chown/trunc */
+ 	unsigned handle_killpriv:1;
+ 
++	/** cache READLINK responses in page cache */
++	unsigned cache_symlinks:1;
++
+ 	/*
+ 	 * The following bitfields are only for optimization purposes
+ 	 * and hence races in setting them will not cause malfunction
+diff --git a/fs/fuse/inode.c b/fs/fuse/inode.c
+index b20b4c2..0e54322 100644
+--- a/fs/fuse/inode.c
++++ b/fs/fuse/inode.c
+@@ -929,6 +929,8 @@ static void process_init_reply(struct fuse_conn *fc, struct fuse_req *req)
+ 				fc->posix_acl = 1;
+ 				fc->sb->s_xattr = fuse_acl_xattr_handlers;
+ 			}
++			if (arg->flags & FUSE_CACHE_SYMLINKS)
++				fc->cache_symlinks = 1;
+ 			if (arg->flags & FUSE_ABORT_ERROR)
+ 				fc->abort_err = 1;
+ 			if (arg->flags & FUSE_MAX_PAGES) {
+@@ -967,7 +969,7 @@ static void fuse_send_init(struct fuse_conn *fc, struct fuse_req *req)
+ 		FUSE_DO_READDIRPLUS | FUSE_READDIRPLUS_AUTO | FUSE_ASYNC_DIO |
+ 		FUSE_WRITEBACK_CACHE | FUSE_NO_OPEN_SUPPORT |
+ 		FUSE_PARALLEL_DIROPS | FUSE_HANDLE_KILLPRIV | FUSE_POSIX_ACL |
+-		FUSE_ABORT_ERROR | FUSE_MAX_PAGES;
++		FUSE_ABORT_ERROR | FUSE_MAX_PAGES | FUSE_CACHE_SYMLINKS;
+ 	req->in.h.opcode = FUSE_INIT;
+ 	req->in.numargs = 1;
+ 	req->in.args[0].size = sizeof(*arg);
+diff --git a/include/uapi/linux/fuse.h b/include/uapi/linux/fuse.h
+index 326ef0b..19828dc 100644
+--- a/include/uapi/linux/fuse.h
++++ b/include/uapi/linux/fuse.h
+@@ -121,6 +121,7 @@
+  *  - add FUSE_COPY_FILE_RANGE
+  *  - add FOPEN_CACHE_DIR
+  *  - add FUSE_MAX_PAGES, add max_pages to init_out
++ *  - add FUSE_CACHE_SYMLINKS
+  */
+ 
+ #ifndef _LINUX_FUSE_H
+@@ -259,6 +260,7 @@ struct fuse_file_lock {
+  * FUSE_POSIX_ACL: filesystem supports posix acls
+  * FUSE_ABORT_ERROR: reading the device after abort returns ECONNABORTED
+  * FUSE_MAX_PAGES: init_out.max_pages contains the max number of req pages
++ * FUSE_CACHE_SYMLINKS: cache READLINK responses
+  */
+ #define FUSE_ASYNC_READ		(1 << 0)
+ #define FUSE_POSIX_LOCKS	(1 << 1)
+@@ -283,6 +285,7 @@ struct fuse_file_lock {
+ #define FUSE_POSIX_ACL		(1 << 20)
+ #define FUSE_ABORT_ERROR	(1 << 21)
+ #define FUSE_MAX_PAGES		(1 << 22)
++#define FUSE_CACHE_SYMLINKS	(1 << 23)
+ 
+ /**
+  * CUSE INIT request/reply flags
+-- 
+2.7.4
+

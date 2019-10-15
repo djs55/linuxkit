@@ -1,0 +1,268 @@
+From c47b2436762129ae1c64a818441af1d1e67eab19 Mon Sep 17 00:00:00 2001
+From: Niels de Vos <ndevos@redhat.com>
+Date: Tue, 21 Aug 2018 14:36:31 +0200
+Subject: [PATCH 03/29] fuse: add support for copy_file_range()
+
+There are several FUSE filesystems that can implement server-side copy
+or other efficient copy/duplication/clone methods. The copy_file_range()
+syscall is the standard interface that users have access to while not
+depending on external libraries that bypass FUSE.
+
+Signed-off-by: Niels de Vos <ndevos@redhat.com>
+Signed-off-by: Miklos Szeredi <mszeredi@redhat.com>
+---
+ fs/fuse/file.c            |  77 +++++++++++++++++++++++++++++++++
+ fs/fuse/fuse_i.h          |   3 ++
+ include/uapi/linux/fuse.h | 106 ++++++++++++++++++++++++++--------------------
+ 3 files changed, 140 insertions(+), 46 deletions(-)
+
+diff --git a/fs/fuse/file.c b/fs/fuse/file.c
+index 96d46b3..d261a89 100644
+--- a/fs/fuse/file.c
++++ b/fs/fuse/file.c
+@@ -3024,6 +3024,82 @@ static long fuse_file_fallocate(struct file *file, int mode, loff_t offset,
+ 	return err;
+ }
+ 
++static ssize_t fuse_copy_file_range(struct file *file_in, loff_t pos_in,
++				    struct file *file_out, loff_t pos_out,
++				    size_t len, unsigned int flags)
++{
++	struct fuse_file *ff_in = file_in->private_data;
++	struct fuse_file *ff_out = file_out->private_data;
++	struct inode *inode_out = file_inode(file_out);
++	struct fuse_inode *fi_out = get_fuse_inode(inode_out);
++	struct fuse_conn *fc = ff_in->fc;
++	FUSE_ARGS(args);
++	struct fuse_copy_file_range_in inarg = {
++		.fh_in = ff_in->fh,
++		.off_in = pos_in,
++		.nodeid_out = ff_out->nodeid,
++		.fh_out = ff_out->fh,
++		.off_out = pos_out,
++		.len = len,
++		.flags = flags
++	};
++	struct fuse_write_out outarg;
++	ssize_t err;
++	/* mark unstable when write-back is not used, and file_out gets
++	 * extended */
++	bool is_unstable = (!fc->writeback_cache) &&
++			   ((pos_out + len) > inode_out->i_size);
++
++	if (fc->no_copy_file_range)
++		return -EOPNOTSUPP;
++
++	inode_lock(inode_out);
++
++	if (fc->writeback_cache) {
++		err = filemap_write_and_wait_range(inode_out->i_mapping,
++						   pos_out, pos_out + len);
++		if (err)
++			goto out;
++
++		fuse_sync_writes(inode_out);
++	}
++
++	if (is_unstable)
++		set_bit(FUSE_I_SIZE_UNSTABLE, &fi_out->state);
++
++	args.in.h.opcode = FUSE_COPY_FILE_RANGE;
++	args.in.h.nodeid = ff_in->nodeid;
++	args.in.numargs = 1;
++	args.in.args[0].size = sizeof(inarg);
++	args.in.args[0].value = &inarg;
++	args.out.numargs = 1;
++	args.out.args[0].size = sizeof(outarg);
++	args.out.args[0].value = &outarg;
++	err = fuse_simple_request(fc, &args);
++	if (err == -ENOSYS) {
++		fc->no_copy_file_range = 1;
++		err = -EOPNOTSUPP;
++	}
++	if (err)
++		goto out;
++
++	if (fc->writeback_cache) {
++		fuse_write_update_size(inode_out, pos_out + outarg.size);
++		file_update_time(file_out);
++	}
++
++	fuse_invalidate_attr(inode_out);
++
++	err = outarg.size;
++out:
++	if (is_unstable)
++		clear_bit(FUSE_I_SIZE_UNSTABLE, &fi_out->state);
++
++	inode_unlock(inode_out);
++
++	return err;
++}
++
+ static const struct file_operations fuse_file_operations = {
+ 	.llseek		= fuse_file_llseek,
+ 	.read_iter	= fuse_file_read_iter,
+@@ -3040,6 +3116,7 @@ static const struct file_operations fuse_file_operations = {
+ 	.compat_ioctl	= fuse_file_compat_ioctl,
+ 	.poll		= fuse_file_poll,
+ 	.fallocate	= fuse_file_fallocate,
++	.copy_file_range = fuse_copy_file_range,
+ };
+ 
+ static const struct file_operations fuse_direct_io_file_operations = {
+diff --git a/fs/fuse/fuse_i.h b/fs/fuse/fuse_i.h
+index 900bdcf..d59ea54 100644
+--- a/fs/fuse/fuse_i.h
++++ b/fs/fuse/fuse_i.h
+@@ -640,6 +640,9 @@ struct fuse_conn {
+ 	/** Allow other than the mounter user to access the filesystem ? */
+ 	unsigned allow_other:1;
+ 
++	/** Does the filesystem support copy_file_range? */
++	unsigned no_copy_file_range:1;
++
+ 	/** The number of requests waiting for completion */
+ 	atomic_t num_waiting;
+ 
+diff --git a/include/uapi/linux/fuse.h b/include/uapi/linux/fuse.h
+index 2170e58..eab0a8e 100644
+--- a/include/uapi/linux/fuse.h
++++ b/include/uapi/linux/fuse.h
+@@ -116,6 +116,9 @@
+  *
+  *  7.27
+  *  - add FUSE_ABORT_ERROR
++ *
++ *  7.28
++ *  - add FUSE_COPY_FILE_RANGE
+  */
+ 
+ #ifndef _LINUX_FUSE_H
+@@ -151,7 +154,7 @@
+ #define FUSE_KERNEL_VERSION 7
+ 
+ /** Minor version number of this interface */
+-#define FUSE_KERNEL_MINOR_VERSION 27
++#define FUSE_KERNEL_MINOR_VERSION 28
+ 
+ /** The node ID of the root inode */
+ #define FUSE_ROOT_ID 1
+@@ -339,53 +342,54 @@ struct fuse_file_lock {
+ #define FUSE_POLL_SCHEDULE_NOTIFY (1 << 0)
+ 
+ enum fuse_opcode {
+-	FUSE_LOOKUP	   = 1,
+-	FUSE_FORGET	   = 2,  /* no reply */
+-	FUSE_GETATTR	   = 3,
+-	FUSE_SETATTR	   = 4,
+-	FUSE_READLINK	   = 5,
+-	FUSE_SYMLINK	   = 6,
+-	FUSE_MKNOD	   = 8,
+-	FUSE_MKDIR	   = 9,
+-	FUSE_UNLINK	   = 10,
+-	FUSE_RMDIR	   = 11,
+-	FUSE_RENAME	   = 12,
+-	FUSE_LINK	   = 13,
+-	FUSE_OPEN	   = 14,
+-	FUSE_READ	   = 15,
+-	FUSE_WRITE	   = 16,
+-	FUSE_STATFS	   = 17,
+-	FUSE_RELEASE       = 18,
+-	FUSE_FSYNC         = 20,
+-	FUSE_SETXATTR      = 21,
+-	FUSE_GETXATTR      = 22,
+-	FUSE_LISTXATTR     = 23,
+-	FUSE_REMOVEXATTR   = 24,
+-	FUSE_FLUSH         = 25,
+-	FUSE_INIT          = 26,
+-	FUSE_OPENDIR       = 27,
+-	FUSE_READDIR       = 28,
+-	FUSE_RELEASEDIR    = 29,
+-	FUSE_FSYNCDIR      = 30,
+-	FUSE_GETLK         = 31,
+-	FUSE_SETLK         = 32,
+-	FUSE_SETLKW        = 33,
+-	FUSE_ACCESS        = 34,
+-	FUSE_CREATE        = 35,
+-	FUSE_INTERRUPT     = 36,
+-	FUSE_BMAP          = 37,
+-	FUSE_DESTROY       = 38,
+-	FUSE_IOCTL         = 39,
+-	FUSE_POLL          = 40,
+-	FUSE_NOTIFY_REPLY  = 41,
+-	FUSE_BATCH_FORGET  = 42,
+-	FUSE_FALLOCATE     = 43,
+-	FUSE_READDIRPLUS   = 44,
+-	FUSE_RENAME2       = 45,
+-	FUSE_LSEEK         = 46,
++	FUSE_LOOKUP		= 1,
++	FUSE_FORGET		= 2,  /* no reply */
++	FUSE_GETATTR		= 3,
++	FUSE_SETATTR		= 4,
++	FUSE_READLINK		= 5,
++	FUSE_SYMLINK		= 6,
++	FUSE_MKNOD		= 8,
++	FUSE_MKDIR		= 9,
++	FUSE_UNLINK		= 10,
++	FUSE_RMDIR		= 11,
++	FUSE_RENAME		= 12,
++	FUSE_LINK		= 13,
++	FUSE_OPEN		= 14,
++	FUSE_READ		= 15,
++	FUSE_WRITE		= 16,
++	FUSE_STATFS		= 17,
++	FUSE_RELEASE		= 18,
++	FUSE_FSYNC		= 20,
++	FUSE_SETXATTR		= 21,
++	FUSE_GETXATTR		= 22,
++	FUSE_LISTXATTR		= 23,
++	FUSE_REMOVEXATTR	= 24,
++	FUSE_FLUSH		= 25,
++	FUSE_INIT		= 26,
++	FUSE_OPENDIR		= 27,
++	FUSE_READDIR		= 28,
++	FUSE_RELEASEDIR		= 29,
++	FUSE_FSYNCDIR		= 30,
++	FUSE_GETLK		= 31,
++	FUSE_SETLK		= 32,
++	FUSE_SETLKW		= 33,
++	FUSE_ACCESS		= 34,
++	FUSE_CREATE		= 35,
++	FUSE_INTERRUPT		= 36,
++	FUSE_BMAP		= 37,
++	FUSE_DESTROY		= 38,
++	FUSE_IOCTL		= 39,
++	FUSE_POLL		= 40,
++	FUSE_NOTIFY_REPLY	= 41,
++	FUSE_BATCH_FORGET	= 42,
++	FUSE_FALLOCATE		= 43,
++	FUSE_READDIRPLUS	= 44,
++	FUSE_RENAME2		= 45,
++	FUSE_LSEEK		= 46,
++	FUSE_COPY_FILE_RANGE	= 47,
+ 
+ 	/* CUSE specific operations */
+-	CUSE_INIT          = 4096,
++	CUSE_INIT		= 4096,
+ };
+ 
+ enum fuse_notify_code {
+@@ -794,4 +798,14 @@ struct fuse_lseek_out {
+ 	uint64_t	offset;
+ };
+ 
++struct fuse_copy_file_range_in {
++	uint64_t	fh_in;
++	uint64_t	off_in;
++	uint64_t	nodeid_out;
++	uint64_t	fh_out;
++	uint64_t	off_out;
++	uint64_t	len;
++	uint64_t	flags;
++};
++
+ #endif /* _LINUX_FUSE_H */
+-- 
+2.7.4
+

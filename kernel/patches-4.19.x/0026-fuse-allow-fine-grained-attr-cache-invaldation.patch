@@ -1,0 +1,126 @@
+From 618a254396e449c79de51b82ef5e209435037e2c Mon Sep 17 00:00:00 2001
+From: Miklos Szeredi <mszeredi@redhat.com>
+Date: Mon, 15 Oct 2018 15:43:06 +0200
+Subject: [PATCH 26/29] fuse: allow fine grained attr cache invaldation
+
+This patch adds the infrastructure for more fine grained attribute
+invalidation.  Currently only 'atime' is invalidated separately.
+
+The use of this infrastructure is extended to the statx(2) interface, which
+for now means that if only 'atime' is invalid and STATX_ATIME is not
+specified in the mask argument, then no GETATTR request will be generated.
+
+Signed-off-by: Miklos Szeredi <mszeredi@redhat.com>
+---
+ fs/fuse/dir.c    | 18 +++++++++++++-----
+ fs/fuse/fuse_i.h |  3 +++
+ fs/fuse/inode.c  |  2 ++
+ 3 files changed, 18 insertions(+), 5 deletions(-)
+
+diff --git a/fs/fuse/dir.c b/fs/fuse/dir.c
+index f4857db..79bbde5 100644
+--- a/fs/fuse/dir.c
++++ b/fs/fuse/dir.c
+@@ -81,13 +81,18 @@ u64 entry_attr_timeout(struct fuse_entry_out *o)
+ 	return time_to_jiffies(o->attr_valid, o->attr_valid_nsec);
+ }
+ 
++static void fuse_invalidate_attr_mask(struct inode *inode, u32 mask)
++{
++	set_mask_bits(&get_fuse_inode(inode)->inval_mask, 0, mask);
++}
++
+ /*
+  * Mark the attributes as stale, so that at the next call to
+  * ->getattr() they will be fetched from userspace
+  */
+ void fuse_invalidate_attr(struct inode *inode)
+ {
+-	get_fuse_inode(inode)->i_time = 0;
++	fuse_invalidate_attr_mask(inode, STATX_BASIC_STATS);
+ }
+ 
+ static void fuse_dir_changed(struct inode *dir)
+@@ -103,7 +108,7 @@ static void fuse_dir_changed(struct inode *dir)
+ void fuse_invalidate_atime(struct inode *inode)
+ {
+ 	if (!IS_RDONLY(inode))
+-		fuse_invalidate_attr(inode);
++		fuse_invalidate_attr_mask(inode, STATX_ATIME);
+ }
+ 
+ /*
+@@ -917,7 +922,8 @@ static int fuse_do_getattr(struct inode *inode, struct kstat *stat,
+ }
+ 
+ static int fuse_update_get_attr(struct inode *inode, struct file *file,
+-				struct kstat *stat, unsigned int flags)
++				struct kstat *stat, u32 request_mask,
++				unsigned int flags)
+ {
+ 	struct fuse_inode *fi = get_fuse_inode(inode);
+ 	int err = 0;
+@@ -927,6 +933,8 @@ static int fuse_update_get_attr(struct inode *inode, struct file *file,
+ 		sync = true;
+ 	else if (flags & AT_STATX_DONT_SYNC)
+ 		sync = false;
++	else if (request_mask & READ_ONCE(fi->inval_mask))
++		sync = true;
+ 	else
+ 		sync = time_before64(fi->i_time, get_jiffies_64());
+ 
+@@ -944,7 +952,7 @@ static int fuse_update_get_attr(struct inode *inode, struct file *file,
+ 
+ int fuse_update_attributes(struct inode *inode, struct file *file)
+ {
+-	return fuse_update_get_attr(inode, file, NULL, 0);
++	return fuse_update_get_attr(inode, file, NULL, STATX_BASIC_STATS, 0);
+ }
+ 
+ int fuse_reverse_inval_entry(struct super_block *sb, u64 parent_nodeid,
+@@ -1566,7 +1574,7 @@ static int fuse_getattr(const struct path *path, struct kstat *stat,
+ 	if (!fuse_allow_current_process(fc))
+ 		return -EACCES;
+ 
+-	return fuse_update_get_attr(inode, NULL, stat, flags);
++	return fuse_update_get_attr(inode, NULL, stat, request_mask, flags);
+ }
+ 
+ static const struct inode_operations fuse_dir_inode_operations = {
+diff --git a/fs/fuse/fuse_i.h b/fs/fuse/fuse_i.h
+index 9f6c56e..9f44a3c 100644
+--- a/fs/fuse/fuse_i.h
++++ b/fs/fuse/fuse_i.h
+@@ -80,6 +80,9 @@ struct fuse_inode {
+ 	/** Time in jiffies until the file attributes are valid */
+ 	u64 i_time;
+ 
++	/* Which attributes are invalid */
++	u32 inval_mask;
++
+ 	/** The sticky bit in inode->i_mode may have been removed, so
+ 	    preserve the original mode */
+ 	umode_t orig_i_mode;
+diff --git a/fs/fuse/inode.c b/fs/fuse/inode.c
+index 934bbab..b20b4c2 100644
+--- a/fs/fuse/inode.c
++++ b/fs/fuse/inode.c
+@@ -90,6 +90,7 @@ static struct inode *fuse_alloc_inode(struct super_block *sb)
+ 
+ 	fi = get_fuse_inode(inode);
+ 	fi->i_time = 0;
++	fi->inval_mask = 0;
+ 	fi->nodeid = 0;
+ 	fi->nlookup = 0;
+ 	fi->attr_version = 0;
+@@ -164,6 +165,7 @@ void fuse_change_attributes_common(struct inode *inode, struct fuse_attr *attr,
+ 
+ 	fi->attr_version = ++fc->attr_version;
+ 	fi->i_time = attr_valid;
++	WRITE_ONCE(fi->inval_mask, 0);
+ 
+ 	inode->i_ino     = fuse_squash_ino(attr->ino);
+ 	inode->i_mode    = (inode->i_mode & S_IFMT) | (attr->mode & 07777);
+-- 
+2.7.4
+

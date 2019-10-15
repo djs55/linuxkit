@@ -1,0 +1,116 @@
+From aca2a4fd252dc93c840cbcb1402db07b3c3cb16b Mon Sep 17 00:00:00 2001
+From: Miklos Szeredi <mszeredi@redhat.com>
+Date: Mon, 1 Oct 2018 10:07:04 +0200
+Subject: [PATCH 18/29] fuse: use mtime for readdir cache verification
+
+Store the modification time of the directory in the cache, obtained before
+starting to fill the cache.
+
+When reading the cache, verify that the directory hasn't changed, by
+checking if current modification time is the same as the one stored in the
+cache.
+
+This only needs to be done when the current file position is at the
+beginning of the directory, as mandated by POSIX.
+
+Signed-off-by: Miklos Szeredi <mszeredi@redhat.com>
+---
+ fs/fuse/fuse_i.h  |  3 +++
+ fs/fuse/readdir.c | 38 ++++++++++++++++++++++++++++++++++----
+ 2 files changed, 37 insertions(+), 4 deletions(-)
+
+diff --git a/fs/fuse/fuse_i.h b/fs/fuse/fuse_i.h
+index 4f90dee..1d30633 100644
+--- a/fs/fuse/fuse_i.h
++++ b/fs/fuse/fuse_i.h
+@@ -117,6 +117,9 @@ struct fuse_inode {
+ 		/* version of the cache */
+ 		u64 version;
+ 
++		/* modification time of directory when cache was started */
++		struct timespec64 mtime;
++
+ 		/* protects above fields */
+ 		spinlock_t lock;
+ 	} rdc;
+diff --git a/fs/fuse/readdir.c b/fs/fuse/readdir.c
+index 18318cc..dafd654 100644
+--- a/fs/fuse/readdir.c
++++ b/fs/fuse/readdir.c
+@@ -399,8 +399,10 @@ static enum fuse_parse_result fuse_parse_cache(struct fuse_file *ff,
+ 	return res;
+ }
+ 
+-static void fuse_rdc_reset(struct fuse_inode *fi)
++static void fuse_rdc_reset(struct inode *inode)
+ {
++	struct fuse_inode *fi = get_fuse_inode(inode);
++
+ 	fi->rdc.cached = false;
+ 	fi->rdc.version++;
+ 	fi->rdc.size = 0;
+@@ -413,6 +415,7 @@ static int fuse_readdir_cached(struct file *file, struct dir_context *ctx)
+ {
+ 	struct fuse_file *ff = file->private_data;
+ 	struct inode *inode = file_inode(file);
++	struct fuse_conn *fc = get_fuse_conn(inode);
+ 	struct fuse_inode *fi = get_fuse_inode(inode);
+ 	enum fuse_parse_result res;
+ 	pgoff_t index;
+@@ -426,13 +429,41 @@ static int fuse_readdir_cached(struct file *file, struct dir_context *ctx)
+ 		ff->readdir.cache_off = 0;
+ 	}
+ 
++	/*
++	 * We're just about to start reading into the cache or reading the
++	 * cache; both cases require an up-to-date mtime value.
++	 */
++	if (!ctx->pos && fc->auto_inval_data) {
++		int err = fuse_update_attributes(inode, file);
++
++		if (err)
++			return err;
++	}
++
+ retry:
+ 	spin_lock(&fi->rdc.lock);
++retry_locked:
+ 	if (!fi->rdc.cached) {
++		/* Starting cache? Set cache mtime. */
++		if (!ctx->pos && !fi->rdc.size) {
++			fi->rdc.mtime = inode->i_mtime;
++		}
+ 		spin_unlock(&fi->rdc.lock);
+ 		return UNCACHED;
+ 	}
+ 	/*
++	 * When at the beginning of the directory (i.e. just after opendir(3) or
++	 * rewinddir(3)), then need to check whether directory contents have
++	 * changed, and reset the cache if so.
++	 */
++	if (!ctx->pos) {
++		if (!timespec64_equal(&fi->rdc.mtime, &inode->i_mtime)) {
++			fuse_rdc_reset(inode);
++			goto retry_locked;
++		}
++	}
++
++	/*
+ 	 * If cache version changed since the last getdents() call, then reset
+ 	 * the cache stream.
+ 	 */
+@@ -469,9 +500,8 @@ static int fuse_readdir_cached(struct file *file, struct dir_context *ctx)
+ 		 * Uh-oh: page gone missing, cache is useless
+ 		 */
+ 		if (fi->rdc.version == ff->readdir.version)
+-			fuse_rdc_reset(fi);
+-		spin_unlock(&fi->rdc.lock);
+-		return UNCACHED;
++			fuse_rdc_reset(inode);
++		goto retry_locked;
+ 	}
+ 
+ 	/* Make sure it's still the same version after getting the page. */
+-- 
+2.7.4
+
