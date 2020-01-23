@@ -1,7 +1,7 @@
 From 553dbc078d39d465f75238dc7e53cbc784a10074 Mon Sep 17 00:00:00 2001
 From: Miklos Szeredi <mszeredi@redhat.com>
 Date: Mon, 1 Oct 2018 10:07:04 +0200
-Subject: [PATCH 17/32] fuse: allow using readdir cache
+Subject: [PATCH 17/33] fuse: allow using readdir cache
 
 The cache is only used if it's completed, not while it's still being
 filled; this constraint could be lifted later, if it turns out to be

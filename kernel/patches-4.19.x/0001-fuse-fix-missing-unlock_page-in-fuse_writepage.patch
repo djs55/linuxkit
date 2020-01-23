@@ -1,7 +1,7 @@
 From 074eda93d553cab90b862071426b6897e4ac27fb Mon Sep 17 00:00:00 2001
 From: Vasily Averin <vvs@virtuozzo.com>
 Date: Fri, 13 Sep 2019 18:17:11 +0300
-Subject: [PATCH 01/32] fuse: fix missing unlock_page in fuse_writepage()
+Subject: [PATCH 01/33] fuse: fix missing unlock_page in fuse_writepage()
 
 commit d5880c7a8620290a6c90ced7a0e8bd0ad9419601 upstream.
 

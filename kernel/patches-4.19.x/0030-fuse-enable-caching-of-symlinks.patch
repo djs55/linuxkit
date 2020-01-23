@@ -1,7 +1,7 @@
 From 3e845ba4f87bdd54ae34e3430595409728d13f73 Mon Sep 17 00:00:00 2001
 From: Dan Schatzberg <dschatzberg@fb.com>
 Date: Thu, 11 Oct 2018 08:17:00 -0700
-Subject: [PATCH 30/32] fuse: enable caching of symlinks
+Subject: [PATCH 30/33] fuse: enable caching of symlinks
 
 FUSE file reads are cached in the page cache, but symlink reads are
 not. This patch enables FUSE READLINK operations to be cached which

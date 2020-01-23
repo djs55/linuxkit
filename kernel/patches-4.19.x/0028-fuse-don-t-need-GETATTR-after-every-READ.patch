@@ -1,7 +1,7 @@
 From 56297d30fe226b1aa0d31293313e6fbaea0e3c23 Mon Sep 17 00:00:00 2001
 From: Miklos Szeredi <mszeredi@redhat.com>
 Date: Mon, 15 Oct 2018 15:43:06 +0200
-Subject: [PATCH 28/32] fuse: don't need GETATTR after every READ
+Subject: [PATCH 28/33] fuse: don't need GETATTR after every READ
 
 If 'auto_inval_data' mode is active, then fuse_file_read_iter() will call
 fuse_update_attributes(), which will check the attribute validity and send

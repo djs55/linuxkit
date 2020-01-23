@@ -1,7 +1,7 @@
 From 9fc67779a95bde90319ac057c89ea3396c7b8da1 Mon Sep 17 00:00:00 2001
 From: Miklos Szeredi <mszeredi@redhat.com>
 Date: Mon, 15 Oct 2018 15:43:06 +0200
-Subject: [PATCH 29/32] fuse: only invalidate atime in direct read
+Subject: [PATCH 29/33] fuse: only invalidate atime in direct read
 
 After sending a synchronous READ request from __fuse_direct_read() we only
 need to invalidate atime; none of the other attributes should be changed by

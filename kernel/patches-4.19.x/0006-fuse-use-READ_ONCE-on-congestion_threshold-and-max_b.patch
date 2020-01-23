@@ -1,7 +1,7 @@
 From 4f96e3680ebeef3f369f09669516617fd1429d54 Mon Sep 17 00:00:00 2001
 From: Kirill Tkhai <ktkhai@virtuozzo.com>
 Date: Mon, 27 Aug 2018 18:29:29 +0300
-Subject: [PATCH 06/32] fuse: use READ_ONCE on congestion_threshold and
+Subject: [PATCH 06/33] fuse: use READ_ONCE on congestion_threshold and
  max_background
 
 Since they are of unsigned int type, it's allowed to read them

@@ -1,7 +1,7 @@
 From 5198a4f84c364590816ce6985c098aecb8dbbf11 Mon Sep 17 00:00:00 2001
 From: Miklos Szeredi <mszeredi@redhat.com>
 Date: Mon, 15 Oct 2018 15:43:06 +0200
-Subject: [PATCH 26/32] bitops: protect variables in bit_clear_unless() macro
+Subject: [PATCH 26/33] bitops: protect variables in bit_clear_unless() macro
 
 Unprotected naming of local variables within bit_clear_unless() can easily
 lead to using the wrong scope.

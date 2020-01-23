@@ -1,7 +1,7 @@
 From aca2a4fd252dc93c840cbcb1402db07b3c3cb16b Mon Sep 17 00:00:00 2001
 From: Miklos Szeredi <mszeredi@redhat.com>
 Date: Mon, 1 Oct 2018 10:07:04 +0200
-Subject: [PATCH 19/32] fuse: use mtime for readdir cache verification
+Subject: [PATCH 19/33] fuse: use mtime for readdir cache verification
 
 Store the modification time of the directory in the cache, obtained before
 starting to fill the cache.
