@@ -1,0 +1,34 @@
+From cc823a3851f44efd537db5b7cc0e0ee739219f1b Mon Sep 17 00:00:00 2001
+From: David Scott <dave.scott@docker.com>
+Date: Wed, 22 Jan 2020 19:36:00 +0000
+Subject: [PATCH 32/32] fuse: don't drop the dcache when invalidating entry
+
+If the directory is in-use (e.g. as the current working directory of a
+process) then calling `d_invalidate` calls `d_drop` which causes the
+directory to appear as deleted.
+
+Instead, we only need to drop the `fuse_dentry_settime` to 0, as if a
+lookup had returned a 0 attribute cache time.
+
+Signed-off-by: David Scott <dave.scott@docker.com>
+---
+ fs/fuse/dir.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/fs/fuse/dir.c b/fs/fuse/dir.c
+index 9e99388..465eb86 100644
+--- a/fs/fuse/dir.c
++++ b/fs/fuse/dir.c
+@@ -130,7 +130,8 @@ void fuse_invalidate_entry_cache(struct dentry *entry)
+  */
+ static void fuse_invalidate_entry(struct dentry *entry)
+ {
+-	d_invalidate(entry);
++	printk("skipping fuse_invalidate_entry's d_invalidate\n");
++	/* d_invalidate(entry); -- skip to avoid "deleting" current working dirs */
+ 	fuse_invalidate_entry_cache(entry);
+ }
+ 
+-- 
+2.7.4
+

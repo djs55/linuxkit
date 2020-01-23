@@ -1,7 +1,7 @@
 From acce3f32511169781cfb767766116326f9f93754 Mon Sep 17 00:00:00 2001
 From: Miklos Szeredi <mszeredi@redhat.com>
 Date: Mon, 1 Oct 2018 10:07:04 +0200
-Subject: [PATCH 17/29] fuse: add readdir cache version
+Subject: [PATCH 18/32] fuse: add readdir cache version
 
 Allow the cache to be invalidated when page(s) have gone missing.  In this
 case increment the version of the cache and reset to an empty state.

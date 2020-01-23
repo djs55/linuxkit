@@ -1,7 +1,7 @@
 From b5683413f10fdafd66aeb994641cd621e6fc211b Mon Sep 17 00:00:00 2001
 From: Kirill Tkhai <ktkhai@virtuozzo.com>
 Date: Mon, 27 Aug 2018 18:29:37 +0300
-Subject: [PATCH 06/29] fuse: add locking to max_background and
+Subject: [PATCH 07/32] fuse: add locking to max_background and
  congestion_threshold changes
 
 Functions sequences like request_end()->flush_bg_queue() require that

@@ -1,7 +1,7 @@
 From d77df09f5218b64b7588df21b925b4795a25656a Mon Sep 17 00:00:00 2001
 From: Kirill Tkhai <ktkhai@virtuozzo.com>
 Date: Mon, 27 Aug 2018 18:29:46 +0300
-Subject: [PATCH 07/29] fuse: introduce fc->bg_lock
+Subject: [PATCH 08/32] fuse: introduce fc->bg_lock
 
 To reduce contention of fc->lock, this patch introduces bg_lock for
 protection of fields related to background queue. These are:

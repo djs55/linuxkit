@@ -1,7 +1,7 @@
 From c00b659f87c174fd03f7766777a6d3135d7ffdfd Mon Sep 17 00:00:00 2001
 From: Miklos Szeredi <mszeredi@redhat.com>
 Date: Fri, 28 Sep 2018 16:43:23 +0200
-Subject: [PATCH 12/29] fuse: split out readdir.c
+Subject: [PATCH 13/32] fuse: split out readdir.c
 
 Directory reading code is about to grow larger, so split it out from dir.c
 into a new source file.

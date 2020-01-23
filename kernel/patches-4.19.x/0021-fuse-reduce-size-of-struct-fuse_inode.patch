@@ -1,7 +1,7 @@
 From 72fe67f4c09f007d6d58646b0c2611799f13315d Mon Sep 17 00:00:00 2001
 From: Miklos Szeredi <mszeredi@redhat.com>
 Date: Mon, 1 Oct 2018 10:07:05 +0200
-Subject: [PATCH 20/29] fuse: reduce size of struct fuse_inode
+Subject: [PATCH 21/32] fuse: reduce size of struct fuse_inode
 
 Do this by grouping fields used for cached writes and putting them into a
 union with fileds used for cached readdir (with obviously no overlap, since

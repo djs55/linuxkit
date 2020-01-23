@@ -1,7 +1,7 @@
 From 618a254396e449c79de51b82ef5e209435037e2c Mon Sep 17 00:00:00 2001
 From: Miklos Szeredi <mszeredi@redhat.com>
 Date: Mon, 15 Oct 2018 15:43:06 +0200
-Subject: [PATCH 26/29] fuse: allow fine grained attr cache invaldation
+Subject: [PATCH 27/32] fuse: allow fine grained attr cache invaldation
 
 This patch adds the infrastructure for more fine grained attribute
 invalidation.  Currently only 'atime' is invalidated separately.
