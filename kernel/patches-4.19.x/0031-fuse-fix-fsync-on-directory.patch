@@ -1,7 +1,7 @@
 From 08a6dba7571db546d18ad146cbd91a35e6ad5df1 Mon Sep 17 00:00:00 2001
 From: Miklos Szeredi <mszeredi@redhat.com>
 Date: Mon, 3 Dec 2018 10:14:43 +0100
-Subject: [PATCH 31/33] fuse: fix fsync on directory
+Subject: [PATCH 31/34] fuse: fix fsync on directory
 
 Commit ab2257e9941b ("fuse: reduce size of struct fuse_inode") moved parts
 of fields related to writeback on regular file and to directory caching

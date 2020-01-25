@@ -1,7 +1,7 @@
 From 474ee842f5779eee2f63cb22c9aecb54493afd04 Mon Sep 17 00:00:00 2001
 From: David Scott <dave.scott@docker.com>
 Date: Thu, 23 Jan 2020 20:15:15 +0000
-Subject: [PATCH 33/33] fuse: localise cache invalidation
+Subject: [PATCH 33/34] fuse: localise cache invalidation
 
 Consider squashing into the previous commit
 

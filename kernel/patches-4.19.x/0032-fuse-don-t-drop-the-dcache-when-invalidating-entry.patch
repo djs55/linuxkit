@@ -1,7 +1,7 @@
 From cc823a3851f44efd537db5b7cc0e0ee739219f1b Mon Sep 17 00:00:00 2001
 From: David Scott <dave.scott@docker.com>
 Date: Wed, 22 Jan 2020 19:36:00 +0000
-Subject: [PATCH 32/33] fuse: don't drop the dcache when invalidating entry
+Subject: [PATCH 32/34] fuse: don't drop the dcache when invalidating entry
 
 If the directory is in-use (e.g. as the current working directory of a
 process) then calling `d_invalidate` calls `d_drop` which causes the
