@@ -1,7 +1,7 @@
 From 4fb4f373e13392b589e32540e5171d384ea65ed1 Mon Sep 17 00:00:00 2001
 From: Miklos Szeredi <mszeredi@redhat.com>
 Date: Mon, 1 Oct 2018 10:07:06 +0200
-Subject: [PATCH 24/34] fuse: realloc page array
+Subject: [PATCH 24/31] fuse: realloc page array
 
 Writeback caching currently allocates requests with the maximum number of
 possible pages, while the actual number of pages per request depends on a

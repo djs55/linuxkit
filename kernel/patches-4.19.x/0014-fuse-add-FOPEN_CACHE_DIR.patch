@@ -1,7 +1,7 @@
 From 39ad6ce930b7569f8aafe1cecfedc1b644ec2d98 Mon Sep 17 00:00:00 2001
 From: Miklos Szeredi <mszeredi@redhat.com>
 Date: Fri, 28 Sep 2018 16:43:23 +0200
-Subject: [PATCH 14/34] fuse: add FOPEN_CACHE_DIR
+Subject: [PATCH 14/31] fuse: add FOPEN_CACHE_DIR
 
 Add flag returned by OPENDIR request to allow kernel to cache directory
 contents in page cache.  The effect of FOPEN_CACHE_DIR is twofold:

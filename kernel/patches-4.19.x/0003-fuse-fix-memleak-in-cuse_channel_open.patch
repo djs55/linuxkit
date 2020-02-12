@@ -1,7 +1,7 @@
 From e9ad6a52a03dd2eb7b5a36e200ee6587d77ed234 Mon Sep 17 00:00:00 2001
 From: zhengbin <zhengbin13@huawei.com>
 Date: Wed, 14 Aug 2019 15:59:09 +0800
-Subject: [PATCH 03/34] fuse: fix memleak in cuse_channel_open
+Subject: [PATCH 03/31] fuse: fix memleak in cuse_channel_open
 
 [ Upstream commit 9ad09b1976c562061636ff1e01bfc3a57aebe56b ]
 

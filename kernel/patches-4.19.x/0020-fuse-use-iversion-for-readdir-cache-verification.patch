@@ -1,7 +1,7 @@
 From 10e7cc8a89cf4f1e527a312db79cb7c0021b4159 Mon Sep 17 00:00:00 2001
 From: Miklos Szeredi <mszeredi@redhat.com>
 Date: Mon, 1 Oct 2018 10:07:05 +0200
-Subject: [PATCH 20/34] fuse: use iversion for readdir cache verification
+Subject: [PATCH 20/31] fuse: use iversion for readdir cache verification
 
 Use the internal iversion counter to make sure modifications of the
 directory through this filesystem are not missed by the mtime check (due to

@@ -1,7 +1,7 @@
 From ec9c3b663b1fbe45c888022f167704e1b52cf9db Mon Sep 17 00:00:00 2001
 From: Miklos Szeredi <mszeredi@redhat.com>
 Date: Fri, 28 Sep 2018 16:43:23 +0200
-Subject: [PATCH 15/34] fuse: extract fuse_emit() helper
+Subject: [PATCH 15/31] fuse: extract fuse_emit() helper
 
 Prepare for cache filling by introducing a helper for emitting a single
 directory entry.

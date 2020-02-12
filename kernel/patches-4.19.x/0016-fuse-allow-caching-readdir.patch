@@ -1,7 +1,7 @@
 From ebad230b41ab51dac135120640b112036ba2c0d2 Mon Sep 17 00:00:00 2001
 From: Miklos Szeredi <mszeredi@redhat.com>
 Date: Mon, 1 Oct 2018 10:07:04 +0200
-Subject: [PATCH 16/34] fuse: allow caching readdir
+Subject: [PATCH 16/31] fuse: allow caching readdir
 
 This patch just adds the cache filling functions, which are invoked if
 FOPEN_CACHE_DIR flag is set in the OPENDIR reply.

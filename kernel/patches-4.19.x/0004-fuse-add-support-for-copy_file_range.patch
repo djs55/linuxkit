@@ -1,7 +1,7 @@
 From c47b2436762129ae1c64a818441af1d1e67eab19 Mon Sep 17 00:00:00 2001
 From: Niels de Vos <ndevos@redhat.com>
 Date: Tue, 21 Aug 2018 14:36:31 +0200
-Subject: [PATCH 04/34] fuse: add support for copy_file_range()
+Subject: [PATCH 04/31] fuse: add support for copy_file_range()
 
 There are several FUSE filesystems that can implement server-side copy
 or other efficient copy/duplication/clone methods. The copy_file_range()
