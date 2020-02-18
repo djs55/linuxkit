@@ -1,7 +1,7 @@
 From eb629f04410638144451a7330b03484e62dc80af Mon Sep 17 00:00:00 2001
 From: Kirill Tkhai <ktkhai@virtuozzo.com>
 Date: Mon, 27 Aug 2018 18:29:56 +0300
-Subject: [PATCH 09/31] fuse: do not take fc->lock in
+Subject: [PATCH 09/32] fuse: do not take fc->lock in
  fuse_request_send_background()
 
 Currently, we take fc->lock there only to check for fc->connected.

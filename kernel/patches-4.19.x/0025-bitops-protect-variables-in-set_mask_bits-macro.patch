@@ -1,7 +1,7 @@
 From 2013a9561bf338e8662a3cb39b6b2c804fae0af8 Mon Sep 17 00:00:00 2001
 From: Miklos Szeredi <mszeredi@redhat.com>
 Date: Mon, 15 Oct 2018 15:43:06 +0200
-Subject: [PATCH 25/31] bitops: protect variables in set_mask_bits() macro
+Subject: [PATCH 25/32] bitops: protect variables in set_mask_bits() macro
 
 Unprotected naming of local variables within the set_mask_bits() can easily
 lead to using the wrong scope.

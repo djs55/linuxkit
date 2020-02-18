@@ -1,7 +1,7 @@
 From 90119ebdb3e1e64502d8b5e36e533c96c8870c56 Mon Sep 17 00:00:00 2001
 From: Eric Biggers <ebiggers@google.com>
 Date: Sun, 8 Sep 2019 20:15:18 -0700
-Subject: [PATCH 02/31] fuse: fix deadlock with aio poll and
+Subject: [PATCH 02/32] fuse: fix deadlock with aio poll and
  fuse_iqueue::waitq.lock
 
 [ Upstream commit 76e43c8ccaa35c30d5df853013561145a0f750a5 ]

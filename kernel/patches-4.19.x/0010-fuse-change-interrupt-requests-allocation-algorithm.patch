@@ -1,7 +1,7 @@
 From 8d9dbe77394c3b2a10742458f7c4e904f94d04b7 Mon Sep 17 00:00:00 2001
 From: Kirill Tkhai <ktkhai@virtuozzo.com>
 Date: Tue, 11 Sep 2018 13:11:56 +0300
-Subject: [PATCH 10/31] fuse: change interrupt requests allocation algorithm
+Subject: [PATCH 10/32] fuse: change interrupt requests allocation algorithm
 
 Using of two unconnected IDs req->in.h.unique and req->intr_unique does not
 allow to link requests to a hash table. We need can't use none of them as a

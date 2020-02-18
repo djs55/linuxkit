@@ -1,7 +1,7 @@
 From 5229715105a714ac41aef4c91b2ddc734d8a7c83 Mon Sep 17 00:00:00 2001
 From: Miklos Szeredi <mszeredi@redhat.com>
 Date: Mon, 1 Oct 2018 10:07:05 +0200
-Subject: [PATCH 22/31] fuse: allocate page array more efficiently
+Subject: [PATCH 22/32] fuse: allocate page array more efficiently
 
 When allocating page array for a request the array for the page pointers
 and the array for page descriptors are allocated by two separate kmalloc()
