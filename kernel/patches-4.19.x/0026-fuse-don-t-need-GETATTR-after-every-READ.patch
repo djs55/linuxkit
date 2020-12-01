@@ -1,0 +1,46 @@
+From e174cf63c6220b6cba35bef353ced38d0bb46f22 Mon Sep 17 00:00:00 2001
+From: Miklos Szeredi <mszeredi@redhat.com>
+Date: Mon, 15 Oct 2018 15:43:06 +0200
+Subject: [PATCH 26/32] fuse: don't need GETATTR after every READ
+
+If 'auto_inval_data' mode is active, then fuse_file_read_iter() will call
+fuse_update_attributes(), which will check the attribute validity and send
+a GETATTR request if some of the attributes are no longer valid.  The page
+cache is then invalidated if the size or mtime have changed.
+
+Then, if a READ request was sent and reply received (which is the case if
+the data wasn't cached yet, or if the file is opened for O_DIRECT), the
+atime attribute is invalidated.
+
+This will result in the next read() also triggering a GETATTR, ...
+
+This can be fixed by only sending GETATTR if the mode or size are invalid,
+we don't need to do a refresh if only atime is invalid.
+
+More generally, none of the callers of fuse_update_attributes() need an
+up-to-date atime value, so for now just remove STATX_ATIME from the request
+mask when attributes are updated for internal use.
+
+Signed-off-by: Miklos Szeredi <mszeredi@redhat.com>
+---
+ fs/fuse/dir.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/fs/fuse/dir.c b/fs/fuse/dir.c
+index 2381f025497e..d7815745e665 100644
+--- a/fs/fuse/dir.c
++++ b/fs/fuse/dir.c
+@@ -953,7 +953,9 @@ static int fuse_update_get_attr(struct inode *inode, struct file *file,
+ 
+ int fuse_update_attributes(struct inode *inode, struct file *file)
+ {
+-	return fuse_update_get_attr(inode, file, NULL, STATX_BASIC_STATS, 0);
++	/* Do *not* need to get atime for internal purposes */
++	return fuse_update_get_attr(inode, file, NULL,
++				    STATX_BASIC_STATS & ~STATX_ATIME, 0);
+ }
+ 
+ int fuse_reverse_inval_entry(struct super_block *sb, u64 parent_nodeid,
+-- 
+2.25.1
+

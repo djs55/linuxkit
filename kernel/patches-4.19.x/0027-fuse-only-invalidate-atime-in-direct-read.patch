@@ -1,0 +1,30 @@
+From 5f31822ad9f151d089d956fc11e0eb3655d86f41 Mon Sep 17 00:00:00 2001
+From: Miklos Szeredi <mszeredi@redhat.com>
+Date: Mon, 15 Oct 2018 15:43:06 +0200
+Subject: [PATCH 27/32] fuse: only invalidate atime in direct read
+
+After sending a synchronous READ request from __fuse_direct_read() we only
+need to invalidate atime; none of the other attributes should be changed by
+a read().
+
+Signed-off-by: Miklos Szeredi <mszeredi@redhat.com>
+---
+ fs/fuse/file.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/fuse/file.c b/fs/fuse/file.c
+index 914a77ea38b8..5eeb7d778b66 100644
+--- a/fs/fuse/file.c
++++ b/fs/fuse/file.c
+@@ -1426,7 +1426,7 @@ static ssize_t __fuse_direct_read(struct fuse_io_priv *io,
+ 
+ 	res = fuse_direct_io(io, iter, ppos, 0);
+ 
+-	fuse_invalidate_attr(inode);
++	fuse_invalidate_atime(inode);
+ 
+ 	return res;
+ }
+-- 
+2.25.1
+

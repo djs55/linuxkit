@@ -1,7 +1,7 @@
 From 1732ff11640d5fefb35083ad0d6bc016f2fd407c Mon Sep 17 00:00:00 2001
 From: Arnaldo Carvalho de Melo <acme@redhat.com>
 Date: Mon, 4 Feb 2019 15:48:03 -0300
-Subject: [PATCH 1/2] perf symbols: Add fallback definitions for
+Subject: [PATCH 01/32] perf symbols: Add fallback definitions for
  GELF_ST_VISIBILITY()
 
 Those aren't present in Alpine Linux 3.4 to edge, so provide fallback
@@ -49,5 +49,5 @@ index a701a8a48f00..dc3fbcbb0e79 100644
  
  #ifdef HAVE_CPLUS_DEMANGLE_SUPPORT
 -- 
-2.26.2
+2.25.1
 

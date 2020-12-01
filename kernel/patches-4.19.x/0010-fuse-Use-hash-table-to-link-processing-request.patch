@@ -1,0 +1,182 @@
+From a89eac07a84b22d3f6afeec2885c019b0b41d3ac Mon Sep 17 00:00:00 2001
+From: Kirill Tkhai <ktkhai@virtuozzo.com>
+Date: Tue, 11 Sep 2018 13:12:14 +0300
+Subject: [PATCH 10/32] fuse: Use hash table to link processing request
+
+We noticed the performance bottleneck in FUSE running our Virtuozzo storage
+over rdma. On some types of workload we observe 20% of times spent in
+request_find() in profiler.  This function is iterating over long requests
+list, and it scales bad.
+
+The patch introduces hash table to reduce the number of iterations, we do
+in this function. Hash generating algorithm is taken from hash_add()
+function, while 256 lines table is used to store pending requests.  This
+fixes problem and improves the performance.
+
+Reported-by: Alexey Kuznetsov <kuznet@virtuozzo.com>
+Signed-off-by: Kirill Tkhai <ktkhai@virtuozzo.com>
+Signed-off-by: Miklos Szeredi <mszeredi@redhat.com>
+---
+ fs/fuse/dev.c    | 21 +++++++++++++++++----
+ fs/fuse/fuse_i.h |  7 +++++--
+ fs/fuse/inode.c  | 27 +++++++++++++++++++--------
+ 3 files changed, 41 insertions(+), 14 deletions(-)
+
+diff --git a/fs/fuse/dev.c b/fs/fuse/dev.c
+index 37710dbce989..f53b16eba113 100644
+--- a/fs/fuse/dev.c
++++ b/fs/fuse/dev.c
+@@ -331,6 +331,11 @@ static u64 fuse_get_unique(struct fuse_iqueue *fiq)
+ 	return fiq->reqctr;
+ }
+ 
++static unsigned int fuse_req_hash(u64 unique)
++{
++	return hash_long(unique & ~FUSE_INT_REQ_BIT, FUSE_PQ_HASH_BITS);
++}
++
+ static void queue_request(struct fuse_iqueue *fiq, struct fuse_req *req)
+ {
+ 	req->in.h.len = sizeof(struct fuse_in_header) +
+@@ -1252,6 +1257,7 @@ static ssize_t fuse_dev_do_read(struct fuse_dev *fud, struct file *file,
+ 	struct fuse_req *req;
+ 	struct fuse_in *in;
+ 	unsigned reqsize;
++	unsigned int hash;
+ 
+  restart:
+ 	for (;;) {
+@@ -1327,7 +1333,8 @@ static ssize_t fuse_dev_do_read(struct fuse_dev *fud, struct file *file,
+ 		err = reqsize;
+ 		goto out_end;
+ 	}
+-	list_move_tail(&req->list, &fpq->processing);
++	hash = fuse_req_hash(req->in.h.unique);
++	list_move_tail(&req->list, &fpq->processing[hash]);
+ 	__fuse_get_request(req);
+ 	set_bit(FR_SENT, &req->flags);
+ 	spin_unlock(&fpq->lock);
+@@ -1813,9 +1820,10 @@ static int fuse_notify(struct fuse_conn *fc, enum fuse_notify_code code,
+ /* Look up request on processing list by unique ID */
+ static struct fuse_req *request_find(struct fuse_pqueue *fpq, u64 unique)
+ {
++	unsigned int hash = fuse_req_hash(unique);
+ 	struct fuse_req *req;
+ 
+-	list_for_each_entry(req, &fpq->processing, list) {
++	list_for_each_entry(req, &fpq->processing[hash], list) {
+ 		if (req->in.h.unique == unique)
+ 			return req;
+ 	}
+@@ -2129,6 +2137,7 @@ void fuse_abort_conn(struct fuse_conn *fc, bool is_abort)
+ 		struct fuse_dev *fud;
+ 		struct fuse_req *req, *next;
+ 		LIST_HEAD(to_end);
++		unsigned int i;
+ 
+ 		/* Background queuing checks fc->connected under bg_lock */
+ 		spin_lock(&fc->bg_lock);
+@@ -2153,7 +2162,9 @@ void fuse_abort_conn(struct fuse_conn *fc, bool is_abort)
+ 				}
+ 				spin_unlock(&req->waitq.lock);
+ 			}
+-			list_splice_tail_init(&fpq->processing, &to_end);
++			for (i = 0; i < FUSE_PQ_HASH_SIZE; i++)
++				list_splice_tail_init(&fpq->processing[i],
++						      &to_end);
+ 			spin_unlock(&fpq->lock);
+ 		}
+ 		spin_lock(&fc->bg_lock);
+@@ -2198,10 +2209,12 @@ int fuse_dev_release(struct inode *inode, struct file *file)
+ 		struct fuse_conn *fc = fud->fc;
+ 		struct fuse_pqueue *fpq = &fud->pq;
+ 		LIST_HEAD(to_end);
++		unsigned int i;
+ 
+ 		spin_lock(&fpq->lock);
+ 		WARN_ON(!list_empty(&fpq->io));
+-		list_splice_init(&fpq->processing, &to_end);
++		for (i = 0; i < FUSE_PQ_HASH_SIZE; i++)
++			list_splice_init(&fpq->processing[i], &to_end);
+ 		spin_unlock(&fpq->lock);
+ 
+ 		end_requests(fc, &to_end);
+diff --git a/fs/fuse/fuse_i.h b/fs/fuse/fuse_i.h
+index 2779d2fb5a38..74798fb74103 100644
+--- a/fs/fuse/fuse_i.h
++++ b/fs/fuse/fuse_i.h
+@@ -411,6 +411,9 @@ struct fuse_iqueue {
+ 	struct fasync_struct *fasync;
+ };
+ 
++#define FUSE_PQ_HASH_BITS 8
++#define FUSE_PQ_HASH_SIZE (1 << FUSE_PQ_HASH_BITS)
++
+ struct fuse_pqueue {
+ 	/** Connection established */
+ 	unsigned connected;
+@@ -418,8 +421,8 @@ struct fuse_pqueue {
+ 	/** Lock protecting accessess to  members of this structure */
+ 	spinlock_t lock;
+ 
+-	/** The list of requests being processed */
+-	struct list_head processing;
++	/** Hash table of requests being processed */
++	struct list_head *processing;
+ 
+ 	/** The list of requests under I/O */
+ 	struct list_head io;
+diff --git a/fs/fuse/inode.c b/fs/fuse/inode.c
+index 84ea2f549ad3..1043ea885be5 100644
+--- a/fs/fuse/inode.c
++++ b/fs/fuse/inode.c
+@@ -595,9 +595,11 @@ static void fuse_iqueue_init(struct fuse_iqueue *fiq)
+ 
+ static void fuse_pqueue_init(struct fuse_pqueue *fpq)
+ {
+-	memset(fpq, 0, sizeof(struct fuse_pqueue));
++	unsigned int i;
++
+ 	spin_lock_init(&fpq->lock);
+-	INIT_LIST_HEAD(&fpq->processing);
++	for (i = 0; i < FUSE_PQ_HASH_SIZE; i++)
++		INIT_LIST_HEAD(&fpq->processing[i]);
+ 	INIT_LIST_HEAD(&fpq->io);
+ 	fpq->connected = 1;
+ }
+@@ -1026,17 +1028,26 @@ static int fuse_bdi_init(struct fuse_conn *fc, struct super_block *sb)
+ struct fuse_dev *fuse_dev_alloc(struct fuse_conn *fc)
+ {
+ 	struct fuse_dev *fud;
++	struct list_head *pq;
+ 
+ 	fud = kzalloc(sizeof(struct fuse_dev), GFP_KERNEL);
+-	if (fud) {
+-		fud->fc = fuse_conn_get(fc);
+-		fuse_pqueue_init(&fud->pq);
++	if (!fud)
++		return NULL;
+ 
+-		spin_lock(&fc->lock);
+-		list_add_tail(&fud->entry, &fc->devices);
+-		spin_unlock(&fc->lock);
++	pq = kcalloc(FUSE_PQ_HASH_SIZE, sizeof(struct list_head), GFP_KERNEL);
++	if (!pq) {
++		kfree(fud);
++		return NULL;
+ 	}
+ 
++	fud->pq.processing = pq;
++	fud->fc = fuse_conn_get(fc);
++	fuse_pqueue_init(&fud->pq);
++
++	spin_lock(&fc->lock);
++	list_add_tail(&fud->entry, &fc->devices);
++	spin_unlock(&fc->lock);
++
+ 	return fud;
+ }
+ EXPORT_SYMBOL_GPL(fuse_dev_alloc);
+-- 
+2.25.1
+

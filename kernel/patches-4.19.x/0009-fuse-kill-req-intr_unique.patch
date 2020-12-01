@@ -1,0 +1,75 @@
+From 47871db14858c584c9baf027eb5170037e5a7fd8 Mon Sep 17 00:00:00 2001
+From: Kirill Tkhai <ktkhai@virtuozzo.com>
+Date: Tue, 11 Sep 2018 13:12:05 +0300
+Subject: [PATCH 09/32] fuse: kill req->intr_unique
+
+This field is not needed after the previous patch, since we can easily
+convert request ID to interrupt request ID and vice versa.
+
+Signed-off-by: Kirill Tkhai <ktkhai@virtuozzo.com>
+Signed-off-by: Miklos Szeredi <mszeredi@redhat.com>
+---
+ fs/fuse/dev.c    | 11 +++++------
+ fs/fuse/fuse_i.h |  3 ---
+ 2 files changed, 5 insertions(+), 9 deletions(-)
+
+diff --git a/fs/fuse/dev.c b/fs/fuse/dev.c
+index 6b6d21ad641d..37710dbce989 100644
+--- a/fs/fuse/dev.c
++++ b/fs/fuse/dev.c
+@@ -1099,12 +1099,11 @@ __releases(fiq->lock)
+ 	int err;
+ 
+ 	list_del_init(&req->intr_entry);
+-	req->intr_unique = (req->in.h.unique | FUSE_INT_REQ_BIT);
+ 	memset(&ih, 0, sizeof(ih));
+ 	memset(&arg, 0, sizeof(arg));
+ 	ih.len = reqsize;
+ 	ih.opcode = FUSE_INTERRUPT;
+-	ih.unique = req->intr_unique;
++	ih.unique = (req->in.h.unique | FUSE_INT_REQ_BIT);
+ 	arg.unique = req->in.h.unique;
+ 
+ 	spin_unlock(&fiq->lock);
+@@ -1817,7 +1816,7 @@ static struct fuse_req *request_find(struct fuse_pqueue *fpq, u64 unique)
+ 	struct fuse_req *req;
+ 
+ 	list_for_each_entry(req, &fpq->processing, list) {
+-		if (req->in.h.unique == unique || req->intr_unique == unique)
++		if (req->in.h.unique == unique)
+ 			return req;
+ 	}
+ 	return NULL;
+@@ -1891,12 +1890,12 @@ static ssize_t fuse_dev_do_write(struct fuse_dev *fud,
+ 	if (!fpq->connected)
+ 		goto err_unlock_pq;
+ 
+-	req = request_find(fpq, oh.unique);
++	req = request_find(fpq, oh.unique & ~FUSE_INT_REQ_BIT);
+ 	if (!req)
+ 		goto err_unlock_pq;
+ 
+-	/* Is it an interrupt reply? */
+-	if (req->intr_unique == oh.unique) {
++	/* Is it an interrupt reply ID? */
++	if (oh.unique & FUSE_INT_REQ_BIT) {
+ 		__fuse_get_request(req);
+ 		spin_unlock(&fpq->lock);
+ 
+diff --git a/fs/fuse/fuse_i.h b/fs/fuse/fuse_i.h
+index 30fea20c991f..2779d2fb5a38 100644
+--- a/fs/fuse/fuse_i.h
++++ b/fs/fuse/fuse_i.h
+@@ -311,9 +311,6 @@ struct fuse_req {
+ 	/** refcount */
+ 	refcount_t count;
+ 
+-	/** Unique ID for the interrupt request */
+-	u64 intr_unique;
+-
+ 	/* Request flags, updated with test/set/clear_bit() */
+ 	unsigned long flags;
+ 
+-- 
+2.25.1
+

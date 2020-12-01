@@ -1,0 +1,154 @@
+From 11bc7fc149a7acdbe029eaeb0a65a1c7096c34de Mon Sep 17 00:00:00 2001
+From: Miklos Szeredi <mszeredi@redhat.com>
+Date: Mon, 1 Oct 2018 10:07:06 +0200
+Subject: [PATCH 23/32] fuse: realloc page array
+
+Writeback caching currently allocates requests with the maximum number of
+possible pages, while the actual number of pages per request depends on a
+couple of factors that cannot be determined when the request is allocated
+(whether page is already under writeback, whether page is contiguous with
+previous pages already added to a request).
+
+This patch allows such requests to start with no page allocation (all pages
+inline) and grow the page array on demand.
+
+If the max_pages tunable remains the default value, then this will mean
+just one allocation that is the same size as before.  If the tunable is
+larger, then this adds at most 3 additional memory allocations (which is
+generously compensated by the improved performance from the larger
+request).
+
+Signed-off-by: Miklos Szeredi <mszeredi@redhat.com>
+---
+ fs/fuse/dev.c    | 49 ++++++++++++++++++++++++++++++++++++++++++++----
+ fs/fuse/file.c   |  8 +++++++-
+ fs/fuse/fuse_i.h |  4 ++++
+ 3 files changed, 56 insertions(+), 5 deletions(-)
+
+diff --git a/fs/fuse/dev.c b/fs/fuse/dev.c
+index eaf57c8aed93..24c377b01922 100644
+--- a/fs/fuse/dev.c
++++ b/fs/fuse/dev.c
+@@ -54,6 +54,18 @@ static void fuse_request_init(struct fuse_req *req, struct page **pages,
+ 	__set_bit(FR_PENDING, &req->flags);
+ }
+ 
++static struct page **fuse_req_pages_alloc(unsigned int npages, gfp_t flags,
++					  struct fuse_page_desc **desc)
++{
++	struct page **pages;
++
++	pages = kzalloc(npages * (sizeof(struct page *) +
++				  sizeof(struct fuse_page_desc)), flags);
++	*desc = (void *) pages + npages * sizeof(struct page *);
++
++	return pages;
++}
++
+ static struct fuse_req *__fuse_request_alloc(unsigned npages, gfp_t flags)
+ {
+ 	struct fuse_req *req = kmem_cache_zalloc(fuse_req_cachep, flags);
+@@ -63,13 +75,12 @@ static struct fuse_req *__fuse_request_alloc(unsigned npages, gfp_t flags)
+ 
+ 		WARN_ON(npages > FUSE_MAX_MAX_PAGES);
+ 		if (npages > FUSE_REQ_INLINE_PAGES) {
+-			pages = kzalloc(npages * (sizeof(*pages) +
+-						  sizeof(*page_descs)), flags);
++			pages = fuse_req_pages_alloc(npages, flags,
++						     &page_descs);
+ 			if (!pages) {
+ 				kmem_cache_free(fuse_req_cachep, req);
+ 				return NULL;
+ 			}
+-			page_descs = (void *) pages + npages * sizeof(*pages);
+ 		} else if (npages) {
+ 			pages = req->inline_pages;
+ 			page_descs = req->inline_page_descs;
+@@ -91,11 +102,41 @@ struct fuse_req *fuse_request_alloc_nofs(unsigned npages)
+ 	return __fuse_request_alloc(npages, GFP_NOFS);
+ }
+ 
+-void fuse_request_free(struct fuse_req *req)
++static void fuse_req_pages_free(struct fuse_req *req)
+ {
+ 	if (req->pages != req->inline_pages)
+ 		kfree(req->pages);
++}
++
++bool fuse_req_realloc_pages(struct fuse_conn *fc, struct fuse_req *req,
++			    gfp_t flags)
++{
++	struct page **pages;
++	struct fuse_page_desc *page_descs;
++	unsigned int npages = min_t(unsigned int,
++				    max_t(unsigned int, req->max_pages * 2,
++					  FUSE_DEFAULT_MAX_PAGES_PER_REQ),
++				    fc->max_pages);
++	WARN_ON(npages <= req->max_pages);
+ 
++	pages = fuse_req_pages_alloc(npages, flags, &page_descs);
++	if (!pages)
++		return false;
++
++	memcpy(pages, req->pages, sizeof(struct page *) * req->max_pages);
++	memcpy(page_descs, req->page_descs,
++	       sizeof(struct fuse_page_desc) * req->max_pages);
++	fuse_req_pages_free(req);
++	req->pages = pages;
++	req->page_descs = page_descs;
++	req->max_pages = npages;
++
++	return true;
++}
++
++void fuse_request_free(struct fuse_req *req)
++{
++	fuse_req_pages_free(req);
+ 	kmem_cache_free(fuse_req_cachep, req);
+ }
+ 
+diff --git a/fs/fuse/file.c b/fs/fuse/file.c
+index 38045aff4aad..914a77ea38b8 100644
+--- a/fs/fuse/file.c
++++ b/fs/fuse/file.c
+@@ -1835,7 +1835,13 @@ static int fuse_writepages_fill(struct page *page,
+ 	     data->orig_pages[req->num_pages - 1]->index + 1 != page->index)) {
+ 		fuse_writepages_send(data);
+ 		data->req = NULL;
++	} else if (req && req->num_pages == req->max_pages) {
++		if (!fuse_req_realloc_pages(fc, req, GFP_NOFS)) {
++			fuse_writepages_send(data);
++			req = data->req = NULL;
++		}
+ 	}
++
+ 	err = -ENOMEM;
+ 	tmp_page = alloc_page(GFP_NOFS | __GFP_HIGHMEM);
+ 	if (!tmp_page)
+@@ -1858,7 +1864,7 @@ static int fuse_writepages_fill(struct page *page,
+ 		struct fuse_inode *fi = get_fuse_inode(inode);
+ 
+ 		err = -ENOMEM;
+-		req = fuse_request_alloc_nofs(fc->max_pages);
++		req = fuse_request_alloc_nofs(FUSE_REQ_INLINE_PAGES);
+ 		if (!req) {
+ 			__free_page(tmp_page);
+ 			goto out_unlock;
+diff --git a/fs/fuse/fuse_i.h b/fs/fuse/fuse_i.h
+index b71f3f61e482..9f6c56eaa9fa 100644
+--- a/fs/fuse/fuse_i.h
++++ b/fs/fuse/fuse_i.h
+@@ -882,6 +882,10 @@ struct fuse_req *fuse_request_alloc(unsigned npages);
+ 
+ struct fuse_req *fuse_request_alloc_nofs(unsigned npages);
+ 
++bool fuse_req_realloc_pages(struct fuse_conn *fc, struct fuse_req *req,
++			    gfp_t flags);
++
++
+ /**
+  * Free a request
+  */
+-- 
+2.25.1
+
